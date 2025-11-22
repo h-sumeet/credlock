@@ -11,7 +11,7 @@ export const generateEmailVerificationTemplate = async (
   redirectUrl: string,
   isEmailChange: boolean = false
 ): Promise<EmailTemplate> => {
-  const verificationUrl = `${redirectUrl}/verify-email?token=${verificationToken}`;
+  const verificationUrl = `${redirectUrl}?token=${verificationToken}`;
 
   const message = isEmailChange
     ? `You have requested to change your email address. To complete this change, please verify your new email address by clicking the button below:`
@@ -38,7 +38,7 @@ export const generatePasswordResetTemplate = async (
   resetToken: string,
   redirectUrl: string
 ): Promise<EmailTemplate> => {
-  const resetUrl = `${redirectUrl}/reset-password?token=${resetToken}`;
+  const resetUrl = `${redirectUrl}?token=${resetToken}`;
 
   return await renderTemplate("password-reset", {
     subject: `${config.app.name} - Password Reset Request`,

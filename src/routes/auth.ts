@@ -27,12 +27,12 @@ import {
 const router = Router();
 
 // Public routes
-router.post("/register", validate(registerSchema), register);
-router.post("/login", validate(loginSchema), login);
-router.post("/refresh", validate(refreshTokenSchema, "headers"), refreshToken);
+router.post("/signup", validate(registerSchema), register);
+router.post("/signin", validate(loginSchema), login);
+router.post("/refresh-token", validate(refreshTokenSchema, "headers"), refreshToken);
 router.post("/verify-email", validate(verifyEmailSchema), verifyEmail);
-router.post("/forgot", validate(forgotPasswordSchema), forgotPassword);
-router.post("/reset", validate(resetPasswordSchema), resetPassword);
+router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
+router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
 
 // Protected routes require authentication
 router.use(validate(tokenHeaderSchema, "headers"), authenticate);
