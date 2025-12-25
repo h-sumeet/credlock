@@ -4,6 +4,7 @@ export const ENV: Record<string, string> = {
 } as const;
 
 export const GITHUB_EMAIL_API = "https://api.github.com/user/emails" as const;
+export const DISPOSABLE_EMAIL_API = "https://disposable.debounce.io" as const;
 
 export const AUTH_PROVIDERS = {
   GITHUB: "github",
@@ -11,3 +12,11 @@ export const AUTH_PROVIDERS = {
 } as const;
 
 export const LOGIN_CODE_EXPIRY_MINUTES = 5 as const;
+
+export const SERVICES = {
+  EXAMAXIS: "examaxis",
+  CREDLOCK: "credlock",
+  ADMIN: "admin",
+} as const;
+
+export const SERVICE_HEADER = "x-service" as const;

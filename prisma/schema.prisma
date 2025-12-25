@@ -10,8 +10,9 @@ datasource db {
 model User {
   id       String  @id @default(auto()) @map("_id") @db.ObjectId
   fullname String
-  email    String  @unique
-  phone    String? 
+  email    String
+  phone    String?
+  service  String
 
   emailInfo    EmailInfo
   phoneInfo    PhoneInfo?
@@ -28,6 +29,7 @@ model User {
 
   sessions Session[]
 
+  @@unique([email, service])
   @@index([emailInfo.verificationToken])
   @@map("users")
 }

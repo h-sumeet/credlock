@@ -36,8 +36,10 @@ describe("OauthController - Key Tests", () => {
       params: { redirectUrl: "http://localhost:3000/callback" },
       query: {
         redirectUrl: "http://localhost:3000/callback",
+        service: "examaxis",
         state: JSON.stringify({
           redirectUrl: "http://localhost:3000/callback",
+          service: "examaxis",
         }),
       },
       headers: { "user-agent": "test-agent" },
@@ -45,6 +47,7 @@ describe("OauthController - Key Tests", () => {
       user: {
         id: "user123",
         email: { address: "test@example.com" },
+        service: "examaxis",
         toJSON: jest.fn().mockReturnValue({ id: "user123" }),
       } as any,
     };
@@ -92,6 +95,7 @@ describe("OauthController - Key Tests", () => {
         prompt: "select_account",
         state: JSON.stringify({
           redirectUrl: "http://localhost:3000/callback",
+          service: "examaxis",
         }),
       });
     });
@@ -129,6 +133,7 @@ describe("OauthController - Key Tests", () => {
         scope: ["user:email"],
         state: JSON.stringify({
           redirectUrl: "http://localhost:3000/callback",
+          service: "examaxis",
         }),
       });
     });

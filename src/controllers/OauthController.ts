@@ -5,11 +5,8 @@ import { logger } from "../helpers/logger";
 import { sendSuccess, throwError } from "../utils/response";
 import { generateRandomString } from "../utils/crypto";
 import { currentDate, addMinutes } from "../utils/dayjs";
-import { LOGIN_CODE_EXPIRY_MINUTES } from "../constants/common";
-import type {
-  IOAuthUser,
-  LoginStoreRecord,
-} from "../types/user";
+import { LOGIN_CODE_EXPIRY_MINUTES, SERVICES } from "../constants/common";
+import type { IOAuthUser, LoginStoreRecord } from "../types/user";
 import type { TokenPair } from "../types/auth";
 import type { User } from "@prisma/client";
 import { serializeUser } from "../helpers/user";
@@ -60,19 +57,31 @@ const authProvider =
   (provider: IOAuthUser["provider"], options: Record<string, unknown> = {}) =>
   (req: Request, res: Response, next: NextFunction) => {
     try {
-      const redirectUrl = req.query["redirectUrl"] as string;  // exchange-code endpoint of frontend
+      const redirectUrl = req.query["redirectUrl"] as string; // exchange-code endpoint of frontend
       const nextUrl = req.query["nextUrl"] as string | undefined; // redirect after login
+      const service = req.query["service"] as string; // service from query params
 
       if (!redirectUrl) throwError("Missing redirectUrl", 400);
+      if (!service) throwError("Missing service parameter", 400);
+
+      // Validate service
+      const validServices = Object.values(SERVICES) as string[];
+      if (!validServices.includes(service)) {
+        throwError(
+          `Invalid service. Allowed services: ${validServices.join(", ")}`,
+          400
+        );
+      }
 
       const state = JSON.stringify({
         redirectUrl,
         nextUrl,
+        service,
       });
 
       passport.authenticate(provider, {
         ...options,
-        state, // redirect URL passed as state
+        state, // redirect URL and service passed as state
       })(req, res, next);
     } catch (error) {
       logger.error(`${provider} authentication error`, { error });

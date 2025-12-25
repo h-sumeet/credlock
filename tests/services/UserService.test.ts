@@ -38,6 +38,7 @@ const createMockUser = (overrides: Partial<any> = {}): any => {
     fullname: "John Doe",
     email: "john@example.com",
     phone: null,
+    service: "examaxis",
     emailInfo: {
       isVerified: false,
       verificationToken: null,
@@ -91,7 +92,11 @@ describe("UserService", () => {
     it("should return false when user does not exist", async () => {
       mockedPrisma.user.findFirst.mockResolvedValue(null);
 
-      const result = await UserService.checkUserExists("test@example.com");
+      const result = await UserService.checkUserExists(
+        "test@example.com",
+        undefined,
+        "examaxis"
+      );
 
       expect(result).toEqual({ exists: false });
     });
@@ -99,11 +104,16 @@ describe("UserService", () => {
     it("should return true with email field when user exists by email", async () => {
       const mockUser = createMockUser({
         email: "test@example.com",
+        service: "examaxis",
       });
 
       mockedPrisma.user.findFirst.mockResolvedValue(mockUser);
 
-      const result = await UserService.checkUserExists("test@example.com");
+      const result = await UserService.checkUserExists(
+        "test@example.com",
+        undefined,
+        "examaxis"
+      );
 
       expect(result).toEqual({ exists: true, user: mockUser, field: "email" });
     });
@@ -112,13 +122,15 @@ describe("UserService", () => {
       const mockUser = createMockUser({
         email: "other@example.com",
         phone: "+1234567890",
+        service: "examaxis",
       });
 
       mockedPrisma.user.findFirst.mockResolvedValue(mockUser);
 
       const result = await UserService.checkUserExists(
         "test@example.com",
-        "+1234567890"
+        "+1234567890",
+        "examaxis"
       );
 
       expect(result).toEqual({ exists: true, user: mockUser, field: "phone" });
@@ -135,13 +147,15 @@ describe("UserService", () => {
         "John Doe",
         "john@example.com",
         undefined,
-        "password123"
+        "password123",
+        "examaxis"
       );
 
       expect(mockedPrisma.user.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           fullname: "John Doe",
           email: "john@example.com",
+          service: "examaxis",
           emailInfo: expect.objectContaining({
             isVerified: false,
             verificationToken: expect.any(String),
@@ -171,12 +185,14 @@ describe("UserService", () => {
         "John Doe",
         "john@example.com",
         "+1234567890",
-        "password123"
+        "password123",
+        "service-name"
       );
 
       expect(mockedPrisma.user.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           fullname: "John Doe",
+          service: "service-name",
           email: "john@example.com",
           phone: "+1234567890",
           emailInfo: expect.objectContaining({
@@ -262,7 +278,8 @@ describe("UserService", () => {
 
       const result = await UserService.authenticateUser(
         "missing@example.com",
-        "password123"
+        "password123",
+        "examaxis"
       );
 
       expect(result).toEqual({ user: null, isValid: false });
@@ -284,10 +301,10 @@ describe("UserService", () => {
         },
       });
 
-      mockedPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockedPrisma.user.findFirst.mockResolvedValue(mockUser);
 
       await expect(
-        UserService.authenticateUser("john@example.com", "any")
+        UserService.authenticateUser("john@example.com", "any", "examaxis")
       ).rejects.toMatchObject({
         message:
           "You signed in with a social account. To log in with a password, please set one using 'Forgot Password'.",
@@ -306,10 +323,14 @@ describe("UserService", () => {
         },
       });
 
-      mockedPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockedPrisma.user.findFirst.mockResolvedValue(mockUser);
 
       await expect(
-        UserService.authenticateUser("john@example.com", "password123")
+        UserService.authenticateUser(
+          "john@example.com",
+          "password123",
+          "examaxis"
+        )
       ).rejects.toMatchObject({
         message: "Please verify your email before logging in",
         code: 403,
@@ -332,11 +353,15 @@ describe("UserService", () => {
         },
       });
 
-      mockedPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockedPrisma.user.findFirst.mockResolvedValue(mockUser);
       mockedUserHelpers.isAccountLocked.mockReturnValue(true);
 
       await expect(
-        UserService.authenticateUser("john@example.com", "password123")
+        UserService.authenticateUser(
+          "john@example.com",
+          "password123",
+          "examaxis"
+        )
       ).rejects.toMatchObject({
         message:
           "Account is temporarily locked due to multiple failed login attempts",
@@ -360,13 +385,14 @@ describe("UserService", () => {
         },
       });
 
-      mockedPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockedPrisma.user.findFirst.mockResolvedValue(mockUser);
       mockedPrisma.user.update.mockResolvedValue(mockUser);
       mockedUserHelpers.comparePassword.mockResolvedValue(true);
 
       const result = await UserService.authenticateUser(
         "john@example.com",
-        "password123"
+        "password123",
+        "examaxis"
       );
 
       expect(result).toEqual({ user: mockUser, isValid: true });
@@ -421,13 +447,14 @@ describe("UserService", () => {
     it("should send password reset email for existing user", async () => {
       const mockUser = createMockUser();
 
-      mockedPrisma.user.findUnique.mockResolvedValue(mockUser);
+      mockedPrisma.user.findFirst.mockResolvedValue(mockUser);
       mockedPrisma.user.update.mockResolvedValue(mockUser);
       mockedEmailService.sendEmail.mockResolvedValue();
 
       await UserService.sendPasswordResetEmail(
         "john@example.com",
-        "https://example.com/reset"
+        "https://example.com/reset",
+        "examaxis"
       );
 
       expect(mockedPrisma.user.update).toHaveBeenCalledWith({
@@ -451,12 +478,13 @@ describe("UserService", () => {
     });
 
     it("should handle non-existent user silently", async () => {
-      mockedPrisma.user.findUnique.mockResolvedValue(null);
+      mockedPrisma.user.findFirst.mockResolvedValue(null);
 
       await expect(
         UserService.sendPasswordResetEmail(
           "nonexistent@example.com",
-          "https://example.com/reset"
+          "https://example.com/reset",
+          "examaxis"
         )
       ).resolves.toBeUndefined();
 
