@@ -15,8 +15,9 @@ export const LOGIN_CODE_EXPIRY_MINUTES = 5 as const;
 
 export const SERVICES = {
   EXAMAXIS: "examaxis",
-  CREDLOCK: "credlock",
-  ADMIN: "admin",
 } as const;
 
-export const SERVICE_HEADER = "x-service" as const;
+export const CUSTOM_HEADERS = {
+  REFRESH_TOKEN: "x-refresh-token",
+  SERVICE_HEADER: "x-service",
+};

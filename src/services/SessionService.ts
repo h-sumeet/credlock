@@ -16,7 +16,7 @@ export const createSession = async (
   ipAddress?: string
 ): Promise<{ session: Session; refreshToken: string }> => {
   const refreshToken = generateRandomString(40);
-  const expiresAt = addDays(+parseInt(config.jwt.refreshExpiresIn));
+  const expiresAt = addDays(parseInt(config.jwt.refreshExpiresIn));
 
   const session = await prisma.session.create({
     data: {

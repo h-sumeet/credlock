@@ -5,7 +5,7 @@ import { currentDate } from "../utils/dayjs";
 import { throwError } from "../utils/response";
 import { isAccountLocked } from "../helpers/user";
 import { verifyAccessToken } from "../helpers/jwt";
-import { SERVICE_HEADER } from "../constants/common";
+import { CUSTOM_HEADERS } from "../constants/common";
 
 /**
  * Middleware to authenticate access and refresh tokens
@@ -17,8 +17,8 @@ export const authenticate = async (
 ): Promise<void> => {
   try {
     const accessToken = req.headers["authorization"]!.substring(7).trim();
-    const refreshToken = req.headers["x-refresh-token"] as string;
-    const service = req.headers[SERVICE_HEADER] as string;
+    const refreshToken = req.headers[CUSTOM_HEADERS.REFRESH_TOKEN] as string;
+    const service = req.headers[CUSTOM_HEADERS.SERVICE_HEADER] as string;
     const payload = verifyAccessToken(accessToken);
 
     if (!payload.userId || !payload.email || !payload.service)

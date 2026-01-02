@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { SERVICES, SERVICE_HEADER } from "../constants/common";
+import { CUSTOM_HEADERS, SERVICES } from "../constants/common";
 import { throwError } from "../utils/response";
 
 /**
@@ -11,7 +11,7 @@ export const extractService = (
   next: NextFunction
 ): void => {
   try {
-    const service = req.headers[SERVICE_HEADER] as string;
+    const service = req.headers[CUSTOM_HEADERS.SERVICE_HEADER] as string;
 
     if (!service) {
       throwError("Service header is required", 400);
