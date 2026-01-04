@@ -1,4 +1,5 @@
 import passport from "passport";
+import type { Request } from "express";
 import {
   Strategy as GoogleStrategy,
   type Profile as GoogleProfile,
@@ -37,15 +38,30 @@ passport.use(
       clientID: config.oauth.google.clientId,
       clientSecret: config.oauth.google.clientSecret,
       callbackURL: config.oauth.google.callbackUrl,
+      passReqToCallback: true,
     },
     async (
+      req: Request,
       accessToken: string,
       refreshToken: string,
       profile: GoogleProfile,
       done: VerifyCallback
     ) => {
       try {
-        const user = await handleGoogleAuth(profile, AUTH_PROVIDERS.GOOGLE);
+        const state = req.query["state"]
+          ? JSON.parse(req.query["state"] as string)
+          : {};
+        const service = state.service;
+
+        if (!service) {
+          return done(new Error("Missing service in OAuth state"), undefined);
+        }
+
+        const user = await handleGoogleAuth(
+          profile,
+          AUTH_PROVIDERS.GOOGLE,
+          service
+        );
         return done(null, user);
       } catch (error) {
         logger.error("Google authentication error", { error, profile });
@@ -62,15 +78,26 @@ passport.use(
       clientID: config.oauth.github.clientId,
       clientSecret: config.oauth.github.clientSecret,
       callbackURL: config.oauth.github.callbackUrl,
+      passReqToCallback: true,
     },
     async (
+      req: Request,
       accessToken: string,
       refreshToken: string,
       profile: GitHubProfile,
       done: (error: Error | null, user?: User) => void
     ) => {
       try {
-        const user = await handleGithubAuth(profile, accessToken);
+        const state = req.query["state"]
+          ? JSON.parse(req.query["state"] as string)
+          : {};
+        const service = state.service;
+
+        if (!service) {
+          return done(new Error("Missing service in OAuth state"), undefined);
+        }
+
+        const user = await handleGithubAuth(profile, accessToken, service);
         return done(null, user);
       } catch (error) {
         logger.error("GitHub authentication error", { error, profile });

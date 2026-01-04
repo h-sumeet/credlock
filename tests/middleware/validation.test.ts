@@ -561,8 +561,12 @@ describe("Validation Schemas", () => {
 
       const middleware = validate(loginSchema);
 
-      expect(() => middleware(mockReq, mockRes, mockNext)).toThrow(
-        "Please provide a valid email address"
+      middleware(mockReq, mockRes, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Please provide a valid email address",
+        })
       );
     });
 
@@ -579,8 +583,12 @@ describe("Validation Schemas", () => {
 
       const middleware = validate(tokenHeaderSchema, "headers");
 
-      expect(() => middleware(mockReq, mockRes, mockNext)).toThrow(
-        "Access token must be a valid JWT"
+      middleware(mockReq, mockRes, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Access token must be a valid JWT",
+        })
       );
     });
 

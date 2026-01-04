@@ -3,6 +3,7 @@ import type { User } from "@prisma/client";
 export interface IJWTPayload {
   userId: string;
   email: string;
+  service: string;
   fullname?: string;
   iat?: number;
   exp?: number;
@@ -19,5 +20,6 @@ declare module "express-serve-static-core" {
   interface Request {
     user?: User;
     jwt?: IJWTPayload;
+    service?: string;
   }
 }

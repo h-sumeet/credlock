@@ -33,16 +33,17 @@ import { logger } from "../helpers/logger";
 export const checkUserExists = async (
   email?: string,
   phone?: string,
+  service?: string,
   userId?: string
 ): Promise<UserExistsResult> => {
   const orConditions = [];
 
-  if (email) {
-    orConditions.push({ email });
+  if (email && service) {
+    orConditions.push({ email, service });
   }
 
-  if (phone) {
-    orConditions.push({ phone });
+  if (phone && service) {
+    orConditions.push({ phone, service });
   }
 
   // If no email or phone provided, return false
@@ -89,7 +90,8 @@ export const createUserWithVerification = async (
   fullname: string,
   email: string,
   phone: string | undefined,
-  password: string
+  password: string,
+  service: string
 ): Promise<{ user: User; verificationToken: string }> => {
   const hashedPassword = await hashPassword(password);
   const { token, hashed, expires } = generateVerificationToken(1, "days");
@@ -98,6 +100,7 @@ export const createUserWithVerification = async (
     data: {
       fullname,
       email,
+      service,
       ...(phone && { phone }),
       passwordInfo: {
         hash: hashedPassword,
@@ -213,11 +216,13 @@ export const verifyEmailWithToken = async (
 // Authenticate a user with email and password
 export const authenticateUser = async (
   email: string,
-  password: string
+  password: string,
+  service: string
 ): Promise<{ user: User | null; isValid: boolean }> => {
-  const user = await prisma.user.findUnique({
+  const user = await prisma.user.findFirst({
     where: {
       email,
+      service,
     },
   });
 
@@ -311,11 +316,13 @@ export const resetFailedLoginAttempts = async (
 // Send password reset email with a reset token and redirect URL
 export const sendPasswordResetEmail = async (
   email: string,
-  redirectUrl: string
+  redirectUrl: string,
+  service: string
 ): Promise<void> => {
-  const user = await prisma.user.findUnique({
+  const user = await prisma.user.findFirst({
     where: {
       email,
+      service,
     },
   });
   if (!user) return;
@@ -422,7 +429,12 @@ export const updateUserProfile = async (
 
   // Validate email/phone availability
   if (email || phone) {
-    const userExists = await checkUserExists(email, phone, user.id);
+    const userExists = await checkUserExists(
+      email,
+      phone,
+      user.service,
+      user.id
+    );
     if (userExists.exists) {
       const existingUser = userExists.user;
       const emailInfo = existingUser.emailInfo as EmailInfo;
@@ -458,7 +470,7 @@ export const updateUserProfile = async (
         },
       });
 
-       // Send verification email to new email address
+      // Send verification email to new email address
       await sendEmailVerification(
         email,
         user.fullname,

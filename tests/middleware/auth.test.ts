@@ -8,7 +8,7 @@ import { prisma } from "../../src/config/prisma";
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
     user: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
     },
     session: {
       findFirst: jest.fn(),
@@ -71,6 +71,7 @@ describe("Authentication Middleware", () => {
       const mockPayload: IJWTPayload = {
         userId: "user123",
         email: "test@example.com",
+        service: "examaxis",
       };
 
       const refreshToken = "valid-refresh-token";
@@ -88,7 +89,7 @@ describe("Authentication Middleware", () => {
       };
 
       mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findUnique as jest.Mock).mockResolvedValue(
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(
         mockUser as any
       );
 
@@ -101,8 +102,11 @@ describe("Authentication Middleware", () => {
       expect(mockedJwtHelper.verifyAccessToken).toHaveBeenCalledWith(
         "valid-token"
       );
-      expect(mockedPrisma.user.findUnique).toHaveBeenCalledWith({
-        where: { id: "user123" },
+      expect(mockedPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: "user123",
+          service: "examaxis",
+        },
       });
       expect(mockRequest.user).toBe(mockUser);
       expect(mockRequest.jwt).toBe(mockPayload);
@@ -114,6 +118,7 @@ describe("Authentication Middleware", () => {
       mockRequest.headers = {
         authorization: "Bearer valid-token",
         "x-refresh-token": "valid-refresh-token",
+        "x-service": "examaxis",
       };
 
       mockedJwtHelper.verifyAccessToken.mockImplementation(() => {
@@ -139,6 +144,7 @@ describe("Authentication Middleware", () => {
       mockRequest.headers = {
         authorization: "Bearer valid-token",
         "x-refresh-token": "valid-refresh-token",
+        "x-service": "examaxis",
       };
 
       mockedJwtHelper.verifyAccessToken.mockImplementation(() => {
@@ -164,6 +170,7 @@ describe("Authentication Middleware", () => {
       mockRequest.headers = {
         authorization: "Bearer valid-token",
         "x-refresh-token": "valid-refresh-token",
+        "x-service": "examaxis",
       };
 
       mockedJwtHelper.verifyAccessToken.mockImplementation(() => {
@@ -189,6 +196,7 @@ describe("Authentication Middleware", () => {
       mockRequest.headers = {
         authorization: "Bearer invalid-token",
         "x-refresh-token": "refresh-token",
+        "x-service": "examaxis",
       };
 
       mockedJwtHelper.verifyAccessToken.mockImplementation(() => {
@@ -214,6 +222,7 @@ describe("Authentication Middleware", () => {
       const mockPayload: IJWTPayload = {
         userId: "user123",
         email: "test@example.com",
+        service: "examaxis",
       };
 
       mockRequest.headers = {
@@ -226,7 +235,7 @@ describe("Authentication Middleware", () => {
         isActive: true,
       } as any);
       mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
 
       await authenticate(
         mockRequest as Request,
@@ -277,6 +286,7 @@ describe("Authentication Middleware", () => {
       const mockPayload: IJWTPayload = {
         userId: "user123",
         email: "test@example.com",
+        service: "examaxis",
       };
 
       const refreshToken = "valid-refresh-token";
@@ -291,7 +301,7 @@ describe("Authentication Middleware", () => {
       };
 
       mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findUnique as jest.Mock).mockResolvedValue(
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(
         mockUser as any
       );
 
@@ -315,6 +325,7 @@ describe("Authentication Middleware", () => {
       const mockPayload: IJWTPayload = {
         userId: "user123",
         email: "test@example.com",
+        service: "examaxis",
       };
 
       mockRequest.headers = {
@@ -327,7 +338,7 @@ describe("Authentication Middleware", () => {
         isActive: true,
       } as any);
       mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findUnique as jest.Mock).mockRejectedValue(
+      (mockedPrisma.user.findFirst as jest.Mock).mockRejectedValue(
         new Error("Database connection error")
       );
 
@@ -379,6 +390,7 @@ describe("Authentication Middleware", () => {
       const mockPayload: IJWTPayload = {
         userId: "user123",
         email: "test@example.com",
+        service: "examaxis",
       };
 
       const refreshToken = "valid-refresh-token";
@@ -390,10 +402,11 @@ describe("Authentication Middleware", () => {
       mockRequest.headers = {
         authorization: "Bearer   valid-token-with-spaces   ",
         "x-refresh-token": refreshToken,
+        "x-service": "examaxis",
       };
 
       mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findUnique as jest.Mock).mockResolvedValue(
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(
         mockUser as any
       );
 

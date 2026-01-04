@@ -4,6 +4,7 @@ import type { User } from "@prisma/client";
 
 export interface IOAuthUser {
   email: string;
+  service: string;
   isVerified: boolean;
   provider: typeof AUTH_PROVIDERS.GOOGLE | typeof AUTH_PROVIDERS.GITHUB;
   displayName: string;

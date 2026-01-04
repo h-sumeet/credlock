@@ -1,6 +1,7 @@
 import Joi from "joi";
 import type { Request, Response, NextFunction } from "express";
 import { throwError } from "../utils/response";
+import { logger } from "../helpers/logger";
 
 // Full name validation schema
 const fullnameSchema = Joi.string()
@@ -137,6 +138,7 @@ export const refreshTokenSchema = Joi.object({
 // OAuth parameters validation schema
 export const oauthParamsSchema = Joi.object({
   redirectUrl: redirectUrlSchema,
+  nextUrl: redirectUrlSchema.optional(),
 });
 
 // Token header validation schema
@@ -155,24 +157,28 @@ export const tokenHeaderSchema = Joi.object({
 // Validation middleware function
 export const validate = (
   schema: Joi.ObjectSchema,
-  source: "body" | "headers" | "params" = "body"
+  source: "body" | "headers" | "params" | "query" = "body"
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    // Extract data from the request (body, headers, or params)
-    const data = req[source];
+    try {
+      // Extract data from the request (body, headers, or params)
+      const data = req[source];
 
-    // Validate data against schema
-    const { error, value } = schema.validate(data, {
-      abortEarly: true, // stop validation on the first error
-      stripUnknown: true, // remove fields not defined in the schema
-    });
+      // Validate data against schema
+      const { error, value } = schema.validate(data, {
+        abortEarly: true, // stop validation on the first error
+        stripUnknown: true, // remove fields not defined in the schema
+      });
 
-    // If validation failed, custom error handler will catch it
-    if (error) throwError(error.details[0]!.message, 400);
-
-    // Replace original request data with the validated value
-    req[source] = value;
-
-    next();
+      // If validation failed, custom error handler will catch it
+      if (error) throwError(error.details[0]!.message, 400);
+      
+      // Replace original request data with the validated value
+      if(source !== "query") req[source] = value;
+      next();
+    } catch (err) {
+      logger.error(`Validation error for ${source}:`, err);
+      next(err);
+    }
   };
 };

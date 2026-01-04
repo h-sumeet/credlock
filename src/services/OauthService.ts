@@ -12,10 +12,10 @@ import { currentDate } from "../utils/dayjs";
  * Create or find user from OAuth provider
  */
 export const createOAuthUser = async (oauthUser: IOAuthUser): Promise<User> => {
-  const { email, displayName, avatarUrl, provider } = oauthUser;
+  const { email, displayName, avatarUrl, provider, service } = oauthUser;
 
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
+  const existingUser = await prisma.user.findFirst({
+    where: { email, service },
   });
 
   if (existingUser) return existingUser;
@@ -23,19 +23,18 @@ export const createOAuthUser = async (oauthUser: IOAuthUser): Promise<User> => {
   const newUser = await prisma.user.create({
     data: {
       fullname: displayName,
-      profileImage: avatarUrl || null,
-      email: email,
+      email,
+      service,
+      ...(avatarUrl && { profileImage: avatarUrl }),
       emailInfo: {
         isVerified: true,
-        provider: provider || null,
+        ...(provider && { provider }),
       },
       passwordInfo: {
-        hash: null, // OAuth users don't have passwords
+        hash: null,
       },
-      phoneInfo: null,
       lockoutInfo: {
         isLocked: false,
-        lockedUntil: null,
         failedAttemptCount: 0,
       },
       isActive: true,
@@ -51,7 +50,8 @@ export const createOAuthUser = async (oauthUser: IOAuthUser): Promise<User> => {
  */
 export const handleGoogleAuth = async (
   profile: GoogleProfile,
-  provider: typeof AUTH_PROVIDERS.GOOGLE
+  provider: typeof AUTH_PROVIDERS.GOOGLE,
+  service: string
 ): Promise<User> => {
   const email = profile.emails?.[0]?.value;
   const avatarUrl = profile.photos?.[0]?.value;
@@ -62,6 +62,7 @@ export const handleGoogleAuth = async (
 
   const oauthUser: IOAuthUser = {
     email,
+    service,
     displayName,
     ...(avatarUrl && { avatarUrl }),
     provider,
@@ -76,7 +77,8 @@ export const handleGoogleAuth = async (
  */
 export const handleGithubAuth = async (
   profile: GitHubProfile,
-  accessToken: string
+  accessToken: string,
+  service: string
 ): Promise<User> => {
   let email = profile.emails?.[0]?.value;
 
@@ -110,6 +112,7 @@ export const handleGithubAuth = async (
 
   const oauthUser: IOAuthUser = {
     email,
+    service,
     displayName,
     ...(profile.photos?.[0]?.value && { avatarUrl: profile.photos[0].value }),
     provider: AUTH_PROVIDERS.GITHUB,

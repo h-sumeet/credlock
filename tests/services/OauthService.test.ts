@@ -37,6 +37,7 @@ describe("OauthService - Core Tests", () => {
         displayName: "Test User",
         provider: AUTH_PROVIDERS.GOOGLE,
         isVerified: true,
+        service: "examaxis",
       };
 
       const existingUser = {
@@ -67,15 +68,16 @@ describe("OauthService - Core Tests", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       } as any;
-      (mockedPrisma.user.findUnique as jest.Mock).mockResolvedValue(
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(
         existingUser
       );
 
       const result = await createOAuthUser(mockOAuthUser);
 
-      expect(mockedPrisma.user.findUnique).toHaveBeenCalledWith({
+      expect(mockedPrisma.user.findFirst).toHaveBeenCalledWith({
         where: {
           email: "test@example.com",
+          service: "examaxis",
         },
       });
       expect(result).toBe(existingUser);
@@ -87,6 +89,7 @@ describe("OauthService - Core Tests", () => {
         displayName: "Test User",
         provider: AUTH_PROVIDERS.GOOGLE,
         isVerified: true,
+        service: "examaxis",
       };
 
       const newUser = {
@@ -118,7 +121,7 @@ describe("OauthService - Core Tests", () => {
         updatedAt: new Date(),
       } as any;
 
-      (mockedPrisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
       (mockedPrisma.user.create as jest.Mock).mockResolvedValue(newUser);
 
       const result = await createOAuthUser(mockOAuthUser);
@@ -127,18 +130,16 @@ describe("OauthService - Core Tests", () => {
         data: expect.objectContaining({
           fullname: "Test User",
           email: "test@example.com",
-          profileImage: null,
-          emailInfo: expect.objectContaining({
+          service: "examaxis",
+          emailInfo: {
             isVerified: true,
             provider: "google",
-          }),
+          },
           passwordInfo: {
             hash: null,
           },
-          phoneInfo: null,
           lockoutInfo: {
             isLocked: false,
-            lockedUntil: null,
             failedAttemptCount: 0,
           },
           isActive: true,
@@ -189,12 +190,13 @@ describe("OauthService - Core Tests", () => {
         updatedAt: new Date(),
       } as any;
 
-      (mockedPrisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
       (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUserDoc);
 
       const result = await handleGithubAuth(
         mockGitHubProfile,
-        "github_access_token"
+        "github_access_token",
+        "examaxis"
       );
 
       expect(mockedPrisma.user.create).toHaveBeenCalledWith({
@@ -202,17 +204,15 @@ describe("OauthService - Core Tests", () => {
           fullname: "GitHub User",
           email: "github@example.com",
           profileImage: "https://avatars.githubusercontent.com/u/123456",
-          emailInfo: expect.objectContaining({
+          emailInfo: {
             isVerified: true,
             provider: "github",
-          }),
+          },
           passwordInfo: {
             hash: null,
           },
-          phoneInfo: null,
           lockoutInfo: {
             isLocked: false,
-            lockedUntil: null,
             failedAttemptCount: 0,
           },
           isActive: true,
@@ -270,12 +270,13 @@ describe("OauthService - Core Tests", () => {
         updatedAt: new Date(),
       } as any;
 
-      (mockedPrisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
       (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUserDoc);
 
       const result = await handleGithubAuth(
         profileNoEmail,
-        "github_access_token"
+        "github_access_token",
+        "examaxis"
       );
 
       expect(mockFetch).toHaveBeenCalledWith(GITHUB_EMAIL_API, {

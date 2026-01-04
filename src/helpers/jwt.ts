@@ -8,6 +8,7 @@ export const generateAccessToken = (user: User): string => {
   const payload: IJWTPayload = {
     userId: user.id,
     email: user.email,
+    service: user.service,
     // fullname: user.fullName,
   };
 

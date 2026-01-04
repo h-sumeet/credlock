@@ -1,4 +1,5 @@
 import winston from "winston";
+import LokiTransport from "winston-loki";
 import { sendDiscordAlert } from "./discord";
 import { formatTimestamp } from "../utils/dayjs";
 import { config } from "../config/app";
@@ -86,6 +87,26 @@ const consoleFormat = winston.format.printf(({ level, message, ...meta }) => {
   return `${level} [${formatTimestamp()}] ${message} ${metaString}`;
 });
 
+// Setup transports
+const transports: winston.transport[] = [
+  new winston.transports.Console({
+    format: winston.format.combine(winston.format.colorize(), consoleFormat),
+  }),
+];
+
+// Add Loki transport if enabled
+if (config.loki.enabled) {
+  transports.push(
+    new LokiTransport({
+      host: config.loki.host,
+      labels: { app: config.app.name, environment: config.nodeEnv },
+      json: true,
+      batching: true,
+      interval: 5,
+    })
+  );
+}
+
 // Create logger instance
 const logger = winston.createLogger({
   level: config.logLevel,
@@ -94,11 +115,7 @@ const logger = winston.createLogger({
     winston.format.errors({ stack: true })
   ),
   defaultMeta: { service: config.app.name },
-  transports: [
-    new winston.transports.Console({
-      format: winston.format.combine(winston.format.colorize(), consoleFormat),
-    }),
-  ],
+  transports,
 });
 
 export { logger };

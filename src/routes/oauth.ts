@@ -12,17 +12,9 @@ import { oauthParamsSchema, validate } from "../middleware/validation";
 
 const router = Router();
 
-// Start flows
-router.get(
-  "/google/:redirectUrl",
-  validate(oauthParamsSchema, "params"),
-  googleAuth
-);
-router.get(
-  "/github/:redirectUrl",
-  validate(oauthParamsSchema, "params"),
-  githubAuth
-);
+// Start flows - service comes from query params
+router.get("/google", validate(oauthParamsSchema, "query"), googleAuth);
+router.get("/github", validate(oauthParamsSchema, "query"), githubAuth);
 
 // Callbacks
 router.get(

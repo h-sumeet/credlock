@@ -6,6 +6,7 @@ const config: Config.InitialOptions = {
   testEnvironment: "node",
   extensionsToTreatAsEsm: [".ts"],
   transform: { "^.+\\.tsx?$": ["ts-jest", { useESM: true }] },
+  setupFilesAfterEnv: ["<rootDir>/tests/setup.ts"],
 
   coverageThreshold: {
     global: {

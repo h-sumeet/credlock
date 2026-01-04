@@ -19,6 +19,7 @@ import {
 import { logger } from "../helpers/logger";
 import { sendSuccess, throwError } from "../utils/response";
 import { serializeUser } from "../helpers/user";
+import { isDisposableEmail } from "../services/EmailValidation";
 
 // User Registration Handler
 export const register = async (
@@ -28,14 +29,20 @@ export const register = async (
 ): Promise<void> => {
   try {
     const { fullname, email, phone, password, redirectUrl } = req.body;
+    const service = req.service!;
+
+    const isDisposable = await isDisposableEmail(email);
+    if (isDisposable) {
+      throwError("Please use a valid email address", 400);
+    }
 
     // Check if user with email or phone already exists
-    const userExists = await checkUserExists(email, phone);
+    const userExists = await checkUserExists(email, phone, service);
 
     if (userExists.exists) {
       const existingUser = userExists.user;
       const emailInfo = existingUser.emailInfo;
-      
+
       if (emailInfo.isVerified) {
         throwError(
           userExists.field === "email"
@@ -43,7 +50,7 @@ export const register = async (
             : "User with this phone number already exists",
           409
         );
-      } 
+      }
 
       await deleteUnverifiedUser(existingUser.id);
     }
@@ -53,23 +60,22 @@ export const register = async (
       fullname,
       email,
       phone,
-      password
+      password,
+      service
     );
 
-    // Send verification email
-    try {
-      await sendEmailVerification(
-        email,
-        fullname,
-        verificationToken,
-        redirectUrl
-      );
-    } catch (error) {
+    // Send verification email (non-blocking)
+    sendEmailVerification(
+      email,
+      fullname,
+      verificationToken,
+      redirectUrl
+    ).catch((error) => {
       logger.error("Failed to send verification email", {
         error,
         userId: user.id,
       });
-    }
+    });
 
     sendSuccess(
       res,
@@ -117,7 +123,8 @@ export const login = async (
 ): Promise<void> => {
   try {
     const { email, password } = req.body;
-    const { user, isValid } = await authenticateUser(email, password);
+    const service = req.service!;
+    const { user, isValid } = await authenticateUser(email, password, service);
 
     if (!isValid || !user) throwError("Invalid email or password!", 401);
 
@@ -199,7 +206,8 @@ export const forgotPassword = async (
 ): Promise<void> => {
   try {
     const { email, redirectUrl } = req.body;
-    await sendPasswordResetEmail(email, redirectUrl);
+    const service = req.service!;
+    await sendPasswordResetEmail(email, redirectUrl, service);
 
     sendSuccess(
       res,

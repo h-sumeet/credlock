@@ -1,14 +1,19 @@
 import * as UserController from "../../src/controllers/UserController";
 import * as UserService from "../../src/services/UserService";
 import * as SessionService from "../../src/services/SessionService";
+import * as EmailValidation from "../../src/services/EmailValidation";
 
 // Mock dependencies
 jest.mock("../../src/services/UserService");
 jest.mock("../../src/services/SessionService");
+jest.mock("../../src/services/EmailValidation");
 
 const mockedUserService = UserService as jest.Mocked<typeof UserService>;
 const mockedSessionService = SessionService as jest.Mocked<
   typeof SessionService
+>;
+const mockedEmailValidation = EmailValidation as jest.Mocked<
+  typeof EmailValidation
 >;
 
 // Helper function to create clean mock user objects (Prisma format)
@@ -18,6 +23,7 @@ const createMockUser = (overrides: Partial<any> = {}): any => {
     fullname: "John Doe",
     email: "john@example.com",
     phone: undefined,
+    service: "examaxis",
     emailInfo: {
       isVerified: false,
       verificationToken: undefined,
@@ -50,10 +56,18 @@ const getSerializedUser = (user: any) => {
   return {
     id: user.id,
     fullname: user.fullname,
+    ...(user.profileImage && {
+      profileImage: user.profileImage,
+    }),
     email: user.email,
     email_verified: user.emailInfo?.isVerified ?? false,
-    phone: user.phone,
-    phone_verified: user.phoneInfo?.isVerified ?? false,
+    ...(user.emailInfo?.provider && {
+      email_provider: user.emailInfo.provider,
+    }),
+    ...(user.phone && {
+      phone: user.phone,
+      phone_verified: user.phoneInfo?.isVerified ?? false,
+    }),
     isActive: user.isActive,
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
@@ -66,6 +80,7 @@ const createMockRequest = (overrides: Partial<any> = {}): any => ({
   body: {},
   headers: {},
   user: undefined,
+  service: "examaxis",
   ip: "127.0.0.1",
   socket: { remoteAddress: "127.0.0.1" },
   ...overrides,
@@ -89,6 +104,9 @@ describe("UserController", () => {
     mockRequest = createMockRequest();
     mockResponse = createMockResponse();
     mockNext = createMockNext();
+
+    // Mock isDisposableEmail to return false by default
+    mockedEmailValidation.isDisposableEmail.mockResolvedValue(false);
   });
 
   describe("register", () => {
@@ -114,13 +132,15 @@ describe("UserController", () => {
 
       expect(mockedUserService.checkUserExists).toHaveBeenCalledWith(
         "john@example.com",
-        undefined
+        undefined,
+        "examaxis"
       );
       expect(mockedUserService.createUserWithVerification).toHaveBeenCalledWith(
         "John Doe",
         "john@example.com",
         undefined,
-        "password123"
+        "password123",
+        "examaxis"
       );
       expect(mockedUserService.sendEmailVerification).toHaveBeenCalledWith(
         "john@example.com",
@@ -159,13 +179,15 @@ describe("UserController", () => {
 
       expect(mockedUserService.checkUserExists).toHaveBeenCalledWith(
         "john@example.com",
-        "+1234567890"
+        "+1234567890",
+        "examaxis"
       );
       expect(mockedUserService.createUserWithVerification).toHaveBeenCalledWith(
         "John Doe",
         "john@example.com",
         "+1234567890",
-        "password123"
+        "password123",
+        "examaxis"
       );
     });
 
@@ -193,7 +215,8 @@ describe("UserController", () => {
         "John Doe",
         "john@example.com",
         undefined,
-        "password123"
+        "password123",
+        "examaxis"
       );
     });
 
@@ -407,7 +430,8 @@ describe("UserController", () => {
 
       expect(mockedUserService.authenticateUser).toHaveBeenCalledWith(
         "john@example.com",
-        "password123"
+        "password123",
+        "examaxis"
       );
       expect(mockedSessionService.generateTokenPair).toHaveBeenCalledWith(
         mockUser,
@@ -698,7 +722,8 @@ describe("UserController", () => {
 
       expect(mockedUserService.sendPasswordResetEmail).toHaveBeenCalledWith(
         "john@example.com",
-        "https://example.com/reset"
+        "https://example.com/reset",
+        "examaxis"
       );
       expect(mockResponse.json).toHaveBeenCalledWith({
         status: "success",
