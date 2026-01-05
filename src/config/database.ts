@@ -5,7 +5,7 @@ import { prisma } from "./prisma";
 let isConnected = false;
 
 /**
- * Connect to MongoDB using Prisma
+ * Connect to PostgreSQL using Prisma
  */
 export const connect = async (): Promise<void> => {
   if (isConnected) {
@@ -17,9 +17,9 @@ export const connect = async (): Promise<void> => {
     // Test the connection
     await prisma.$connect();
     isConnected = true;
-    logger.info("Prisma connected to MongoDB successfully");
+    logger.info("Prisma connected to PostgreSQL successfully");
   } catch (error) {
-    logger.error("Failed to connect to MongoDB via Prisma", {
+    logger.error("Failed to connect to PostgreSQL via Prisma", {
       error: error instanceof Error ? error.message : String(error),
     });
     isConnected = false;
@@ -28,7 +28,7 @@ export const connect = async (): Promise<void> => {
 };
 
 /**
- * Disconnect from MongoDB
+ * Disconnect from PostgreSQL
  */
 export const disconnect = async (): Promise<void> => {
   if (!isConnected) {
@@ -38,7 +38,7 @@ export const disconnect = async (): Promise<void> => {
   try {
     await prisma.$disconnect();
     isConnected = false;
-    logger.info("Prisma disconnected from MongoDB");
+    logger.info("Prisma disconnected from PostgreSQL");
   } catch (error) {
     logger.error("Error disconnecting Prisma", {
       error: error instanceof Error ? error.message : String(error),

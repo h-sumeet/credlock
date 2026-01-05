@@ -1,5 +1,4 @@
 import winston from "winston";
-import LokiTransport from "winston-loki";
 import { sendDiscordAlert } from "./discord";
 import { formatTimestamp } from "../utils/dayjs";
 import { config } from "../config/app";
@@ -93,19 +92,6 @@ const transports: winston.transport[] = [
     format: winston.format.combine(winston.format.colorize(), consoleFormat),
   }),
 ];
-
-// Add Loki transport if enabled
-if (config.loki.enabled) {
-  transports.push(
-    new LokiTransport({
-      host: config.loki.host,
-      labels: { app: config.app.name, environment: config.nodeEnv },
-      json: true,
-      batching: true,
-      interval: 5,
-    })
-  );
-}
 
 // Create logger instance
 const logger = winston.createLogger({

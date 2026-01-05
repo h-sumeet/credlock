@@ -41,32 +41,46 @@ describe("OauthService - Core Tests", () => {
       };
 
       const existingUser = {
-        id: "existing123",
-        fullName: "Existing User",
-        emailInfo: {
-          emailAddress: "test@example.com",
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        fullname: "Existing User",
+        email: "test@example.com",
+        phone: null,
+        service: "examaxis",
+        profile_image: null,
+        is_active: true,
+        last_login_at: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
           provider: "google",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        phoneInfo: null,
-        passwordInfo: {
+        phone_info: null,
+        password_info: {
+          id: "password-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
           hash: null,
-          resetToken: null,
-          resetExpires: null,
+          reset_token: null,
+          reset_expires: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        lockoutInfo: {
-          isLocked: false,
-          lockedUntil: null,
-          failedAttemptCount: 0,
+        lockout_info: {
+          id: "lockout-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_locked: false,
+          locked_until: null,
+          failed_attempt_count: 0,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        profileImage: null,
-        isActive: true,
-        lastLoginAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       } as any;
       (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(
         existingUser
@@ -79,6 +93,7 @@ describe("OauthService - Core Tests", () => {
           email: "test@example.com",
           service: "examaxis",
         },
+        include: expect.any(Object),
       });
       expect(result).toBe(existingUser);
     });
@@ -93,32 +108,46 @@ describe("OauthService - Core Tests", () => {
       };
 
       const newUser = {
-        id: "user123",
-        fullName: "Test User",
-        emailInfo: {
-          emailAddress: "test@example.com",
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        fullname: "Test User",
+        email: "test@example.com",
+        phone: null,
+        service: "examaxis",
+        profile_image: null,
+        is_active: true,
+        last_login_at: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
           provider: "google",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        phoneInfo: null,
-        passwordInfo: {
+        phone_info: null,
+        password_info: {
+          id: "password-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
           hash: null,
-          resetToken: null,
-          resetExpires: null,
+          reset_token: null,
+          reset_expires: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        lockoutInfo: {
-          isLocked: false,
-          lockedUntil: null,
-          failedAttemptCount: 0,
+        lockout_info: {
+          id: "lockout-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_locked: false,
+          locked_until: null,
+          failed_attempt_count: 0,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        profileImage: null,
-        isActive: true,
-        lastLoginAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       } as any;
 
       (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
@@ -131,20 +160,27 @@ describe("OauthService - Core Tests", () => {
           fullname: "Test User",
           email: "test@example.com",
           service: "examaxis",
-          emailInfo: {
-            isVerified: true,
-            provider: "google",
+          email_info: {
+            create: expect.objectContaining({
+              is_verified: true,
+              provider: "google",
+            }),
           },
-          passwordInfo: {
-            hash: null,
+          password_info: {
+            create: expect.objectContaining({
+              hash: null,
+            }),
           },
-          lockoutInfo: {
-            isLocked: false,
-            failedAttemptCount: 0,
+          lockout_info: {
+            create: expect.objectContaining({
+              is_locked: false,
+              failed_attempt_count: 0,
+            }),
           },
-          isActive: true,
-          lastLoginAt: expect.any(Date),
+          is_active: true,
+          last_login_at: expect.any(Date),
         }),
+        include: expect.any(Object),
       });
       expect(result).toBe(newUser);
     });
@@ -162,32 +198,46 @@ describe("OauthService - Core Tests", () => {
       } as GitHubProfile;
 
       const mockUserDoc = {
-        id: "user123",
-        fullName: "GitHub User",
-        emailInfo: {
-          emailAddress: "github@example.com",
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        fullname: "GitHub User",
+        email: "github@example.com",
+        phone: null,
+        service: "examaxis",
+        profile_image: "https://avatars.githubusercontent.com/u/123456",
+        is_active: true,
+        last_login_at: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
           provider: "github",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        phoneInfo: null,
-        passwordInfo: {
+        phone_info: null,
+        password_info: {
+          id: "password-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
           hash: null,
-          resetToken: null,
-          resetExpires: null,
+          reset_token: null,
+          reset_expires: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        lockoutInfo: {
-          isLocked: false,
-          lockedUntil: null,
-          failedAttemptCount: 0,
+        lockout_info: {
+          id: "lockout-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_locked: false,
+          locked_until: null,
+          failed_attempt_count: 0,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        profileImage: "https://avatars.githubusercontent.com/u/123456",
-        isActive: true,
-        lastLoginAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       } as any;
 
       (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
@@ -203,21 +253,28 @@ describe("OauthService - Core Tests", () => {
         data: expect.objectContaining({
           fullname: "GitHub User",
           email: "github@example.com",
-          profileImage: "https://avatars.githubusercontent.com/u/123456",
-          emailInfo: {
-            isVerified: true,
-            provider: "github",
+          profile_image: "https://avatars.githubusercontent.com/u/123456",
+          email_info: {
+            create: expect.objectContaining({
+              is_verified: true,
+              provider: "github",
+            }),
           },
-          passwordInfo: {
-            hash: null,
+          password_info: {
+            create: expect.objectContaining({
+              hash: null,
+            }),
           },
-          lockoutInfo: {
-            isLocked: false,
-            failedAttemptCount: 0,
+          lockout_info: {
+            create: expect.objectContaining({
+              is_locked: false,
+              failed_attempt_count: 0,
+            }),
           },
-          isActive: true,
-          lastLoginAt: expect.any(Date),
+          is_active: true,
+          last_login_at: expect.any(Date),
         }),
+        include: expect.any(Object),
       });
       expect(result).toBe(mockUserDoc);
     });
@@ -242,32 +299,46 @@ describe("OauthService - Core Tests", () => {
       } as any);
 
       const mockUserDoc = {
-        id: "user123",
-        fullName: "GitHub User",
-        emailInfo: {
-          emailAddress: "primary@example.com",
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        fullname: "GitHub User",
+        email: "primary@example.com",
+        phone: null,
+        service: "examaxis",
+        profile_image: "https://avatars.githubusercontent.com/u/123456",
+        is_active: true,
+        last_login_at: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
           provider: "github",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        phoneInfo: null,
-        passwordInfo: {
+        phone_info: null,
+        password_info: {
+          id: "password-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
           hash: null,
-          resetToken: null,
-          resetExpires: null,
+          reset_token: null,
+          reset_expires: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        lockoutInfo: {
-          isLocked: false,
-          lockedUntil: null,
-          failedAttemptCount: 0,
+        lockout_info: {
+          id: "lockout-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_locked: false,
+          locked_until: null,
+          failed_attempt_count: 0,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        profileImage: "https://avatars.githubusercontent.com/u/123456",
-        isActive: true,
-        lastLoginAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       } as any;
 
       (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);

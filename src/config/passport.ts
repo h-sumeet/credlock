@@ -11,21 +11,30 @@ import {
 } from "passport-github2";
 import { config } from "./app";
 import { prisma } from "./prisma";
-import type { User } from "@prisma/client";
+import type { UserDetails } from "../types/user";
 import { logger } from "../helpers/logger";
 import { handleGithubAuth, handleGoogleAuth } from "../services/OauthService";
 import { AUTH_PROVIDERS } from "../constants/common";
 
+// Include options for user queries with relations
+const userInclude = {
+  emailInfo: true,
+  phoneInfo: true,
+  passwordInfo: true,
+  lockoutInfo: true,
+} as const;
+
 passport.serializeUser((user: Express.User, done) => {
-  done(null, (user as User).id);
+  done(null, (user as UserDetails).id);
 });
 
 passport.deserializeUser(async (id: string, done) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id },
+      include: userInclude,
     });
-    done(null, user);
+    done(null, user as UserDetails | null);
   } catch (error) {
     done(error, null);
   }
@@ -51,16 +60,16 @@ passport.use(
         const state = req.query["state"]
           ? JSON.parse(req.query["state"] as string)
           : {};
-        const service = state.service;
+        const serviceId = state.serviceId;
 
-        if (!service) {
+        if (!serviceId) {
           return done(new Error("Missing service in OAuth state"), undefined);
         }
 
         const user = await handleGoogleAuth(
           profile,
           AUTH_PROVIDERS.GOOGLE,
-          service
+          serviceId
         );
         return done(null, user);
       } catch (error) {
@@ -85,7 +94,7 @@ passport.use(
       accessToken: string,
       refreshToken: string,
       profile: GitHubProfile,
-      done: (error: Error | null, user?: User) => void
+      done: (error: Error | null, user?: UserDetails) => void
     ) => {
       try {
         const state = req.query["state"]

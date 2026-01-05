@@ -1,17 +1,26 @@
 import { prisma } from "../config/prisma";
 import type { TokenPair } from "../types/auth";
+import type { UserDetails } from "../types/user";
 import { config } from "../config/app";
 import { generateRandomString, hashData } from "../utils/crypto";
 import { addDays, currentDate } from "../utils/dayjs";
 import { generateAccessToken } from "../helpers/jwt";
 import { throwError } from "../utils/response";
-import type { Session, User } from "@prisma/client";
+import type { Session } from "@prisma/client";
+
+// Include options for user queries with relations
+const userInclude = {
+  emailInfo: true,
+  phoneInfo: true,
+  passwordInfo: true,
+  lockoutInfo: true,
+} as const;
 
 /**
  * Create session with refresh token
  */
 export const createSession = async (
-  user: User,
+  user: UserDetails,
   userAgent?: string,
   ipAddress?: string
 ): Promise<{ session: Session; refreshToken: string }> => {
@@ -38,7 +47,7 @@ export const createSession = async (
  * Generate token pair (access token + refresh token)
  */
 export const generateTokenPair = async (
-  user: User,
+  user: UserDetails,
   userAgent?: string,
   ipAddress?: string
 ): Promise<TokenPair> => {
@@ -56,7 +65,9 @@ export const generateTokenPair = async (
  * Refresh access token using refresh token
  */
 export const refreshAccessToken = async (
-  refreshToken: string
+  refreshToken: string,
+  userAgent?: string,
+  ipAddress?: string
 ): Promise<TokenPair> => {
   const hashedRefreshToken = hashData(refreshToken);
 
@@ -66,7 +77,9 @@ export const refreshAccessToken = async (
       expiresAt: { gt: currentDate() },
     },
     include: {
-      user: true,
+      user: {
+        include: userInclude,
+      },
     },
   });
 
@@ -76,7 +89,7 @@ export const refreshAccessToken = async (
   // Delete the old session
   await revokeRefreshToken(refreshToken);
   // Generate new token pair
-  return generateTokenPair(session.user);
+  return generateTokenPair(session.user as UserDetails, userAgent, ipAddress);
 };
 
 /**

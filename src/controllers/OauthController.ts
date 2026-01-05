@@ -6,9 +6,8 @@ import { sendSuccess, throwError } from "../utils/response";
 import { generateRandomString } from "../utils/crypto";
 import { currentDate, addMinutes } from "../utils/dayjs";
 import { LOGIN_CODE_EXPIRY_MINUTES, SERVICES } from "../constants/common";
-import type { IOAuthUser, LoginStoreRecord } from "../types/user";
+import type { IOAuthUser, LoginStoreRecord, UserDetails } from "../types/user";
 import type { TokenPair } from "../types/auth";
-import type { User } from "@prisma/client";
 import { serializeUser } from "../helpers/user";
 
 // In-memory login store with auto-expiry handling
@@ -16,7 +15,7 @@ const createLoginStore = () => {
   const store = new Map<string, LoginStoreRecord>();
 
   // Store login code with associated user and tokens
-  const set = (code: string, user: User, tokens: TokenPair) =>
+  const set = (code: string, user: UserDetails, tokens: TokenPair) =>
     store.set(code, {
       user,
       tokens,
@@ -59,24 +58,21 @@ const authProvider =
     try {
       const redirectUrl = req.query["redirectUrl"] as string; // exchange-code endpoint of frontend
       const nextUrl = req.query["nextUrl"] as string | undefined; // redirect after login
-      const service = req.query["service"] as string; // service from query params
+      const serviceId = req.query["service"] as string; // service from query params
 
       if (!redirectUrl) throwError("Missing redirectUrl", 400);
-      if (!service) throwError("Missing service parameter", 400);
+      if (!serviceId) throwError("Missing service parameter", 400);
 
       // Validate service
       const validServices = Object.values(SERVICES) as string[];
-      if (!validServices.includes(service)) {
-        throwError(
-          `Invalid service. Allowed services: ${validServices.join(", ")}`,
-          400
-        );
+      if (!validServices.includes(serviceId)) {
+        throwError('Invalid service.', 400);
       }
 
       const state = JSON.stringify({
         redirectUrl,
         nextUrl,
-        service,
+        serviceId: serviceId,
       });
 
       passport.authenticate(provider, {

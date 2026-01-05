@@ -3,46 +3,63 @@ import type { Profile as GitHubProfile } from "passport-github2";
 import { prisma } from "../config/prisma";
 import { logger } from "../helpers/logger";
 import { GITHUB_EMAIL_API, AUTH_PROVIDERS } from "../constants/common";
-import type { IOAuthUser } from "../types/user";
+import type { IOAuthUser, UserDetails } from "../types/user";
 import { throwError } from "../utils/response";
-import type { User } from "@prisma/client";
 import { currentDate } from "../utils/dayjs";
+
+// Include options for user queries with relations
+const userInclude = {
+  emailInfo: true,
+  phoneInfo: true,
+  passwordInfo: true,
+  lockoutInfo: true,
+} as const;
 
 /**
  * Create or find user from OAuth provider
  */
-export const createOAuthUser = async (oauthUser: IOAuthUser): Promise<User> => {
-  const { email, displayName, avatarUrl, provider, service } = oauthUser;
+export const createOAuthUser = async (
+  oauthUser: IOAuthUser
+): Promise<UserDetails> => {
+  const { email, displayName, avatarUrl, provider, serviceId } = oauthUser;
 
   const existingUser = await prisma.user.findFirst({
-    where: { email, service },
+    where: { email, serviceId },
+    include: userInclude,
   });
 
-  if (existingUser) return existingUser;
+  if (existingUser) return existingUser as UserDetails;
 
   const newUser = await prisma.user.create({
     data: {
-      fullname: displayName,
+      fullName: displayName,
       email,
-      service,
+      serviceId: serviceId,
       ...(avatarUrl && { profileImage: avatarUrl }),
       emailInfo: {
-        isVerified: true,
-        ...(provider && { provider }),
+        create: {
+          isVerified: false,
+          ...(provider && { provider }),
+        },
       },
       passwordInfo: {
-        hash: null,
+        create: {
+          hash: null,
+        },
       },
       lockoutInfo: {
-        isLocked: false,
-        failedAttemptCount: 0,
+        create: {
+          isLocked: false,
+          failedAttemptCount: 0,
+        },
       },
       isActive: true,
       lastLoginAt: currentDate(),
     },
+    include: userInclude,
   });
 
-  return newUser;
+  return newUser as UserDetails;
 };
 
 /**
@@ -51,8 +68,8 @@ export const createOAuthUser = async (oauthUser: IOAuthUser): Promise<User> => {
 export const handleGoogleAuth = async (
   profile: GoogleProfile,
   provider: typeof AUTH_PROVIDERS.GOOGLE,
-  service: string
-): Promise<User> => {
+  serviceId: string
+): Promise<UserDetails> => {
   const email = profile.emails?.[0]?.value;
   const avatarUrl = profile.photos?.[0]?.value;
   const displayName = profile.displayName || profile.name?.givenName;
@@ -62,7 +79,7 @@ export const handleGoogleAuth = async (
 
   const oauthUser: IOAuthUser = {
     email,
-    service,
+    serviceId,
     displayName,
     ...(avatarUrl && { avatarUrl }),
     provider,
@@ -78,8 +95,8 @@ export const handleGoogleAuth = async (
 export const handleGithubAuth = async (
   profile: GitHubProfile,
   accessToken: string,
-  service: string
-): Promise<User> => {
+  serviceId: string
+): Promise<UserDetails> => {
   let email = profile.emails?.[0]?.value;
 
   // Fetch email from GitHub API if not in profile
@@ -112,7 +129,7 @@ export const handleGithubAuth = async (
 
   const oauthUser: IOAuthUser = {
     email,
-    service,
+    serviceId,
     displayName,
     ...(profile.photos?.[0]?.value && { avatarUrl: profile.photos[0].value }),
     provider: AUTH_PROVIDERS.GITHUB,

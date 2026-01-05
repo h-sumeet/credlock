@@ -34,6 +34,7 @@ export interface IConfig {
     maxRequests: number;
   };
   discordAlert: string;
+  postgresqlUrl: string;
   oauth: {
     google: {
       clientId: string;

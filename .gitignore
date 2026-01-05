@@ -75,3 +75,5 @@ playwright-report/
 
 .env.keys
 /generated/prisma
+
+/generated/prisma

@@ -1,28 +1,28 @@
 import type { Request, Response, NextFunction } from "express";
-import { CUSTOM_HEADERS, SERVICES } from "../constants/common";
+import { HTTP_HEADERS, SERVICES } from "../constants/common";
 import { throwError } from "../utils/response";
 
 /**
  * Middleware to extract and validate service header
  */
-export const extractService = (
+export const validateServiceHeader = (
   req: Request,
   res: Response,
   next: NextFunction
 ): void => {
   try {
-    const service = req.headers[CUSTOM_HEADERS.SERVICE_HEADER] as string;
+    const serviceId = req.headers[HTTP_HEADERS.SERVICE_ID] as string;
 
-    if (!service) {
+    if (!serviceId) {
       throwError("Service header is required", 400);
     }
 
     const validServices = Object.values(SERVICES) as string[];
-    if (!validServices.includes(service)) {
+    if (!validServices.includes(serviceId)) {
       throwError("Invalid service.", 400);
     }
 
-    req.service = service;
+    req.serviceId = serviceId;
     next();
   } catch (error) {
     next(error);

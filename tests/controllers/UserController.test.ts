@@ -19,33 +19,46 @@ const mockedEmailValidation = EmailValidation as jest.Mocked<
 // Helper function to create clean mock user objects (Prisma format)
 const createMockUser = (overrides: Partial<any> = {}): any => {
   const defaultUser = {
-    id: "507f1f77bcf86cd799439011",
+    id: "550e8400-e29b-41d4-a716-446655440000",
     fullname: "John Doe",
     email: "john@example.com",
-    phone: undefined,
+    phone: null,
     service: "examaxis",
-    emailInfo: {
-      isVerified: false,
-      verificationToken: undefined,
-      verificationExpires: undefined,
-      pendingEmail: undefined,
+    profile_image: null,
+    is_active: true,
+    last_login_at: null,
+    created_at: new Date(),
+    updated_at: new Date(),
+    email_info: {
+      id: "email-info-id",
+      user_id: "550e8400-e29b-41d4-a716-446655440000",
+      is_verified: false,
+      verification_token: null,
+      verification_expires: null,
+      pending_email: null,
       provider: "local",
+      created_at: new Date(),
+      updated_at: new Date(),
     },
-    phoneInfo: undefined,
-    passwordInfo: {
+    phone_info: null,
+    password_info: {
+      id: "password-info-id",
+      user_id: "550e8400-e29b-41d4-a716-446655440000",
       hash: "hashedpassword",
-      resetToken: undefined,
-      resetExpires: undefined,
+      reset_token: null,
+      reset_expires: null,
+      created_at: new Date(),
+      updated_at: new Date(),
     },
-    lockoutInfo: {
-      isLocked: false,
-      lockedUntil: undefined,
-      failedAttemptCount: 0,
+    lockout_info: {
+      id: "lockout-info-id",
+      user_id: "550e8400-e29b-41d4-a716-446655440000",
+      is_locked: false,
+      locked_until: null,
+      failed_attempt_count: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
     },
-    isActive: true,
-    lastLoginAt: undefined,
-    createdAt: new Date(),
-    updatedAt: new Date(),
   };
 
   return { ...defaultUser, ...overrides };
@@ -56,22 +69,22 @@ const getSerializedUser = (user: any) => {
   return {
     id: user.id,
     fullname: user.fullname,
-    ...(user.profileImage && {
-      profileImage: user.profileImage,
+    ...(user.profile_image && {
+      profileImage: user.profile_image,
     }),
     email: user.email,
-    email_verified: user.emailInfo?.isVerified ?? false,
-    ...(user.emailInfo?.provider && {
-      email_provider: user.emailInfo.provider,
+    email_verified: user.email_info?.is_verified ?? false,
+    ...(user.email_info?.provider && {
+      email_provider: user.email_info.provider,
     }),
     ...(user.phone && {
       phone: user.phone,
-      phone_verified: user.phoneInfo?.isVerified ?? false,
+      phone_verified: user.phone_info?.is_verified ?? false,
     }),
-    isActive: user.isActive,
-    lastLoginAt: user.lastLoginAt,
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt,
+    isActive: user.is_active,
+    lastLoginAt: user.last_login_at,
+    createdAt: user.created_at,
+    updatedAt: user.updated_at,
   };
 };
 
@@ -229,12 +242,16 @@ describe("UserController", () => {
 
       const mockUser = createMockUser({
         email: "existing@example.com",
-        emailInfo: {
-          isVerified: true,
-          verificationToken: undefined,
-          verificationExpires: undefined,
-          pendingEmail: undefined,
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
           provider: "local",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
       mockedUserService.checkUserExists.mockResolvedValue({
@@ -262,12 +279,16 @@ describe("UserController", () => {
 
       const mockUser = createMockUser({
         phone: "+1234567890",
-        emailInfo: {
-          isVerified: true,
-          verificationToken: undefined,
-          verificationExpires: undefined,
-          pendingEmail: undefined,
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
           provider: "local",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
       mockedUserService.checkUserExists.mockResolvedValue({
@@ -320,11 +341,16 @@ describe("UserController", () => {
   describe("verifyEmail", () => {
     it("should verify email successfully for new user", async () => {
       const mockUser = createMockUser({
-        emailInfo: {
-          address: "john@example.com",
-          isVerified: true,
-          verificationToken: undefined,
-          verificationExpires: undefined,
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
+          provider: "local",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
       const mockTokens = {
@@ -365,11 +391,16 @@ describe("UserController", () => {
 
     it("should verify email for already verified user without generating tokens", async () => {
       const mockUser = createMockUser({
-        emailInfo: {
-          address: "john@example.com",
-          isVerified: true,
-          verificationToken: undefined,
-          verificationExpires: undefined,
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
+          provider: "local",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
 
@@ -401,11 +432,16 @@ describe("UserController", () => {
   describe("login", () => {
     it("should login user successfully", async () => {
       const mockUser = createMockUser({
-        emailInfo: {
-          address: "john@example.com",
-          isVerified: true,
-          verificationToken: undefined,
-          verificationExpires: undefined,
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
+          provider: "local",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
       const mockTokens = {

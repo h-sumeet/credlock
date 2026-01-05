@@ -11,39 +11,62 @@ jest.mock("bcryptjs");
 
 const mockedConfig = config as jest.Mocked<typeof config>;
 
-// Helper function to create clean mock users with only real fields
+// Helper function to create clean mock users with PostgreSQL schema
 const createMockUser = (overrides: Partial<any> = {}) => {
   const defaultUser = {
-    id: "user123",
-    fullName: "John Doe",
-    emailInfo: {
-      emailAddress: "test@example.com",
-      isVerified: false,
-      verificationToken: null,
-      verificationExpires: null,
-      pendingEmail: null,
+    id: "550e8400-e29b-41d4-a716-446655440000",
+    fullname: "John Doe",
+    email: "test@example.com",
+    phone: null,
+    service: "examaxis",
+    profile_image: null,
+    is_active: true,
+    last_login_at: null,
+    created_at: new Date(),
+    updated_at: new Date(),
+    email_info: {
+      id: "email-info-id",
+      user_id: "550e8400-e29b-41d4-a716-446655440000",
+      is_verified: false,
+      verification_token: null,
+      verification_expires: null,
+      pending_email: null,
       provider: "local",
+      created_at: new Date(),
+      updated_at: new Date(),
     },
-    phoneInfo: null,
-    passwordInfo: {
+    phone_info: null,
+    password_info: {
+      id: "password-info-id",
+      user_id: "550e8400-e29b-41d4-a716-446655440000",
       hash: "hashedPassword123",
-      resetToken: null,
-      resetExpires: null,
+      reset_token: null,
+      reset_expires: null,
+      created_at: new Date(),
+      updated_at: new Date(),
     },
-    lockoutInfo: {
-      isLocked: false,
-      lockedUntil: null,
-      failedAttemptCount: 0,
+    lockout_info: {
+      id: "lockout-info-id",
+      user_id: "550e8400-e29b-41d4-a716-446655440000",
+      is_locked: false,
+      locked_until: null,
+      failed_attempt_count: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
     },
-    customFields: {},
-    isActive: true,
-    lastLoginAt: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    markModified: jest.fn(),
   };
 
-  return { ...defaultUser, ...overrides } as any;
+  // Deep merge overrides
+  const mergedUser = { ...defaultUser };
+  for (const key of Object.keys(overrides)) {
+    if (typeof overrides[key] === "object" && overrides[key] !== null && !Array.isArray(overrides[key])) {
+      (mergedUser as any)[key] = { ...(defaultUser as any)[key], ...overrides[key] };
+    } else {
+      (mergedUser as any)[key] = overrides[key];
+    }
+  }
+
+  return mergedUser as any;
 };
 
 describe("User Helpers", () => {
@@ -103,7 +126,7 @@ describe("User Helpers", () => {
       bcrypt.compare.mockResolvedValue(true);
 
       const result = await comparePassword(
-        mockUser.passwordInfo.hash,
+        mockUser.password_info.hash,
         inputPassword
       );
 
@@ -122,7 +145,7 @@ describe("User Helpers", () => {
       bcrypt.compare.mockResolvedValue(false);
 
       const result = await comparePassword(
-        mockUser.passwordInfo.hash,
+        mockUser.password_info.hash,
         inputPassword
       );
 
@@ -191,10 +214,14 @@ describe("User Helpers", () => {
 
     it("should return true for locked account", () => {
       const mockUser = createMockUser({
-        lockoutInfo: {
-          isLocked: true,
-          lockedUntil: new Date(Date.now() + 1000), // Lock expires in 1 second
-          failedAttemptCount: 5,
+        lockout_info: {
+          id: "lockout-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_locked: true,
+          locked_until: new Date(Date.now() + 1000), // Lock expires in 1 second
+          failed_attempt_count: 5,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
 

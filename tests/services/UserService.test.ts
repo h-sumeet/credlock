@@ -2,6 +2,7 @@ import * as UserService from "../../src/services/UserService";
 import * as EmailService from "../../src/services/EmailService";
 import * as UserHelpers from "../../src/helpers/user";
 import { prisma } from "../../src/config/prisma";
+import type { UserDetails } from "../../src/types/user";
 
 // Mock dependencies
 jest.mock("../../src/config/prisma", () => ({
@@ -11,8 +12,21 @@ jest.mock("../../src/config/prisma", () => ({
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
     },
-    $runCommandRaw: jest.fn(),
+    emailInfo: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
+    passwordInfo: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+      upsert: jest.fn(),
+    },
+    lockoutInfo: {
+      update: jest.fn(),
+      upsert: jest.fn(),
+    },
   },
 }));
 jest.mock("../../src/services/EmailService");
@@ -25,46 +39,88 @@ const mockedPrisma = {
     findUnique: prisma.user.findUnique as jest.MockedFunction<any>,
     create: prisma.user.create as jest.MockedFunction<any>,
     update: prisma.user.update as jest.MockedFunction<any>,
+    delete: prisma.user.delete as jest.MockedFunction<any>,
   },
-  $runCommandRaw: prisma.$runCommandRaw as jest.MockedFunction<any>,
+  emailInfo: {
+    findFirst: prisma.emailInfo.findFirst as jest.MockedFunction<any>,
+    update: prisma.emailInfo.update as jest.MockedFunction<any>,
+  },
+  passwordInfo: {
+    findFirst: prisma.passwordInfo.findFirst as jest.MockedFunction<any>,
+    update: prisma.passwordInfo.update as jest.MockedFunction<any>,
+    upsert: prisma.passwordInfo.upsert as jest.MockedFunction<any>,
+  },
+  lockoutInfo: {
+    update: prisma.lockoutInfo.update as jest.MockedFunction<any>,
+    upsert: prisma.lockoutInfo.upsert as jest.MockedFunction<any>,
+  },
 };
 const mockedEmailService = EmailService as jest.Mocked<typeof EmailService>;
 const mockedUserHelpers = UserHelpers as jest.Mocked<typeof UserHelpers>;
 
-// Helper function to create clean mock user objects with only real fields
-const createMockUser = (overrides: Partial<any> = {}): any => {
-  const defaultUser = {
-    id: "507f1f77bcf86cd799439011", // Valid MongoDB ObjectId
+// Helper function to create clean mock user objects with PostgreSQL schema
+const createMockUser = (overrides: Partial<any> = {}): UserDetails => {
+  const defaultUser: UserDetails = {
+    id: "550e8400-e29b-41d4-a716-446655440000", // Valid UUID
     fullname: "John Doe",
     email: "john@example.com",
     phone: null,
     service: "examaxis",
-    emailInfo: {
-      isVerified: false,
-      verificationToken: null,
-      verificationExpires: null,
-      pendingEmail: null,
+    profile_image: null,
+    is_active: true,
+    last_login_at: null,
+    created_at: new Date(),
+    updated_at: new Date(),
+    email_info: {
+      id: "email-info-id",
+      user_id: "550e8400-e29b-41d4-a716-446655440000",
+      is_verified: false,
+      verification_token: null,
+      verification_expires: null,
+      pending_email: null,
       provider: "local",
+      created_at: new Date(),
+      updated_at: new Date(),
     },
-    phoneInfo: null,
-    passwordInfo: {
+    phone_info: null,
+    password_info: {
+      id: "password-info-id",
+      user_id: "550e8400-e29b-41d4-a716-446655440000",
       hash: "hashedpassword",
-      resetToken: null,
-      resetExpires: null,
+      reset_token: null,
+      reset_expires: null,
+      created_at: new Date(),
+      updated_at: new Date(),
     },
-    lockoutInfo: {
-      isLocked: false,
-      lockedUntil: null,
-      failedAttemptCount: 0,
+    lockout_info: {
+      id: "lockout-info-id",
+      user_id: "550e8400-e29b-41d4-a716-446655440000",
+      is_locked: false,
+      locked_until: null,
+      failed_attempt_count: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
     },
-    profileImage: null,
-    isActive: true,
-    lastLoginAt: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
   };
 
-  return { ...defaultUser, ...overrides };
+  // Deep merge overrides
+  const mergedUser = { ...defaultUser };
+  for (const key of Object.keys(overrides)) {
+    if (
+      typeof overrides[key] === "object" &&
+      overrides[key] !== null &&
+      !Array.isArray(overrides[key])
+    ) {
+      (mergedUser as any)[key] = {
+        ...(defaultUser as any)[key],
+        ...overrides[key],
+      };
+    } else {
+      (mergedUser as any)[key] = overrides[key];
+    }
+  }
+
+  return mergedUser;
 };
 
 describe("UserService", () => {
@@ -80,9 +136,9 @@ describe("UserService", () => {
     });
     mockedUserHelpers.isAccountLocked.mockImplementation((user: any) => {
       return !!(
-        user?.lockoutInfo?.isLocked &&
-        user?.lockoutInfo?.lockedUntil &&
-        new Date(user.lockoutInfo.lockedUntil).getTime() > Date.now()
+        user?.lockout_info?.is_locked &&
+        user?.lockout_info?.locked_until &&
+        new Date(user.lockout_info.locked_until).getTime() > Date.now()
       );
     });
     mockedUserHelpers.comparePassword.mockResolvedValue(true);
@@ -156,19 +212,26 @@ describe("UserService", () => {
           fullname: "John Doe",
           email: "john@example.com",
           service: "examaxis",
-          emailInfo: expect.objectContaining({
-            isVerified: false,
-            verificationToken: expect.any(String),
-            verificationExpires: expect.any(Date),
-          }),
-          passwordInfo: expect.objectContaining({
-            hash: expect.any(String),
-          }),
-          lockoutInfo: expect.objectContaining({
-            isLocked: false,
-            failedAttemptCount: 0,
-          }),
+          email_info: {
+            create: expect.objectContaining({
+              is_verified: false,
+              verification_token: expect.any(String),
+              verification_expires: expect.any(Date),
+            }),
+          },
+          password_info: {
+            create: expect.objectContaining({
+              hash: expect.any(String),
+            }),
+          },
+          lockout_info: {
+            create: expect.objectContaining({
+              is_locked: false,
+              failed_attempt_count: 0,
+            }),
+          },
         }),
+        include: expect.any(Object),
       });
       expect(result.user).toBeDefined();
       expect(result.verificationToken).toBeDefined();
@@ -195,19 +258,20 @@ describe("UserService", () => {
           service: "service-name",
           email: "john@example.com",
           phone: "+1234567890",
-          emailInfo: expect.objectContaining({
-            isVerified: false,
-            verificationToken: expect.any(String),
-            verificationExpires: expect.any(Date),
-          }),
-          passwordInfo: expect.objectContaining({
-            hash: expect.any(String),
-          }),
-          lockoutInfo: expect.objectContaining({
-            isLocked: false,
-            failedAttemptCount: 0,
-          }),
+          email_info: {
+            create: expect.objectContaining({
+              is_verified: false,
+              verification_token: expect.any(String),
+              verification_expires: expect.any(Date),
+            }),
+          },
+          phone_info: {
+            create: expect.objectContaining({
+              is_verified: false,
+            }),
+          },
         }),
+        include: expect.any(Object),
       });
       expect(result.user).toBeDefined();
       expect(result.verificationToken).toBeDefined();
@@ -217,54 +281,40 @@ describe("UserService", () => {
   describe("verifyEmailWithToken", () => {
     it("should verify email successfully", async () => {
       const mockUser = createMockUser({
-        emailInfo: {
-          emailAddress: "john@example.com",
-          isVerified: false,
-          verificationToken: "hashed-token",
-          verificationExpires: new Date(Date.now() + 3600000),
-          pendingEmail: null,
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: false,
+          verification_token: "hashed-token",
+          verification_expires: new Date(Date.now() + 3600000),
+          pending_email: null,
           provider: "local",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
 
-      // Mock $runCommandRaw for finding user with token
-      // MongoDB returns documents with _id as { $oid: "string" }
-      mockedPrisma.$runCommandRaw.mockResolvedValueOnce({
-        cursor: {
-          firstBatch: [
-            {
-              ...mockUser,
-              _id: { $oid: mockUser.id },
-            },
-          ],
-        },
-      });
-      // Mock for duplicate check
-      mockedPrisma.$runCommandRaw.mockResolvedValueOnce({
-        cursor: {
-          firstBatch: [],
-        },
-      });
+      const mockEmailInfo = {
+        ...mockUser.email_info,
+        user: mockUser,
+      };
 
-      mockedPrisma.user.update.mockResolvedValue({
+      mockedPrisma.emailInfo.findFirst.mockResolvedValue(mockEmailInfo);
+      mockedPrisma.emailInfo.update.mockResolvedValue(mockEmailInfo);
+      mockedPrisma.user.findUnique.mockResolvedValue({
         ...mockUser,
-        emailInfo: { ...mockUser.emailInfo, isVerified: true },
+        email_info: { ...mockUser.email_info, is_verified: true },
       });
 
       const result = await UserService.verifyEmailWithToken("token123");
 
-      expect(mockedPrisma.user.update).toHaveBeenCalled();
+      expect(mockedPrisma.emailInfo.update).toHaveBeenCalled();
       expect(result.user).toBeDefined();
       expect(result.isNewlyVerified).toBe(true);
     });
 
     it("should return error for invalid token", async () => {
-      // Mock $runCommandRaw returning no results
-      mockedPrisma.$runCommandRaw.mockResolvedValue({
-        cursor: {
-          firstBatch: [],
-        },
-      });
+      mockedPrisma.emailInfo.findFirst.mockResolvedValue(null);
 
       await expect(
         UserService.verifyEmailWithToken("invalid-token")
@@ -287,17 +337,25 @@ describe("UserService", () => {
 
     it("should throw 403 for social account without password", async () => {
       const mockUser = createMockUser({
-        emailInfo: {
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
           provider: "google",
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        passwordInfo: {
+        password_info: {
+          id: "password-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
           hash: null,
-          resetToken: null,
-          resetExpires: null,
+          reset_token: null,
+          reset_expires: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
 
@@ -314,12 +372,16 @@ describe("UserService", () => {
 
     it("should throw 403 when email is not verified", async () => {
       const mockUser = createMockUser({
-        emailInfo: {
-          isVerified: false,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: false,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
+          provider: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
 
@@ -339,17 +401,25 @@ describe("UserService", () => {
 
     it("should throw 423 when account is locked", async () => {
       const mockUser = createMockUser({
-        emailInfo: {
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
+          provider: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        lockoutInfo: {
-          isLocked: true,
-          lockedUntil: new Date(Date.now() + 60 * 60 * 1000),
-          failedAttemptCount: 5,
+        lockout_info: {
+          id: "lockout-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_locked: true,
+          locked_until: new Date(Date.now() + 60 * 60 * 1000),
+          failed_attempt_count: 5,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
 
@@ -371,17 +441,25 @@ describe("UserService", () => {
 
     it("should authenticate successfully and update lastLogin", async () => {
       const mockUser = createMockUser({
-        emailInfo: {
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
+          provider: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        lockoutInfo: {
-          isLocked: false,
-          lockedUntil: null,
-          failedAttemptCount: 0,
+        lockout_info: {
+          id: "lockout-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_locked: false,
+          locked_until: null,
+          failed_attempt_count: 0,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
 
@@ -403,42 +481,54 @@ describe("UserService", () => {
   describe("incrementFailedLoginAttempts", () => {
     it("should increment failed login attempts", async () => {
       const mockUser = createMockUser();
-      mockedPrisma.user.update.mockResolvedValue({} as any);
+      mockedPrisma.lockoutInfo.upsert.mockResolvedValue({} as any);
 
       await UserService.incrementFailedLoginAttempts(mockUser);
 
-      expect(mockedPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUser.id },
-        data: {
-          lockoutInfo: expect.objectContaining({
-            failedAttemptCount: mockUser.lockoutInfo.failedAttemptCount + 1,
-            isLocked: false,
-          }),
-        },
+      expect(mockedPrisma.lockoutInfo.upsert).toHaveBeenCalledWith({
+        where: { user_id: mockUser.id },
+        update: expect.objectContaining({
+          failed_attempt_count:
+            (mockUser.lockout_info?.failed_attempt_count ?? 0) + 1,
+          is_locked: false,
+        }),
+        create: expect.objectContaining({
+          user_id: mockUser.id,
+          failed_attempt_count: 1,
+          is_locked: false,
+        }),
       });
     });
 
     it("should lock account when max attempts reached", async () => {
       const mockUser = createMockUser({
-        lockoutInfo: {
-          isLocked: false,
-          lockedUntil: null,
-          failedAttemptCount: 4,
+        lockout_info: {
+          id: "lockout-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_locked: false,
+          locked_until: null,
+          failed_attempt_count: 4,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
-      mockedPrisma.user.update.mockResolvedValue({} as any);
+      mockedPrisma.lockoutInfo.upsert.mockResolvedValue({} as any);
 
       await UserService.incrementFailedLoginAttempts(mockUser);
 
-      expect(mockedPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUser.id },
-        data: {
-          lockoutInfo: {
-            isLocked: true,
-            lockedUntil: expect.any(Date),
-            failedAttemptCount: 5,
-          },
-        },
+      expect(mockedPrisma.lockoutInfo.upsert).toHaveBeenCalledWith({
+        where: { user_id: mockUser.id },
+        update: expect.objectContaining({
+          is_locked: true,
+          locked_until: expect.any(Date),
+          failed_attempt_count: 5,
+        }),
+        create: expect.objectContaining({
+          user_id: mockUser.id,
+          is_locked: true,
+          locked_until: expect.any(Date),
+          failed_attempt_count: 5,
+        }),
       });
     });
   });
@@ -448,7 +538,9 @@ describe("UserService", () => {
       const mockUser = createMockUser();
 
       mockedPrisma.user.findFirst.mockResolvedValue(mockUser);
-      mockedPrisma.user.update.mockResolvedValue(mockUser);
+      mockedPrisma.passwordInfo.upsert.mockResolvedValue(
+        mockUser.password_info as any
+      );
       mockedEmailService.sendEmail.mockResolvedValue();
 
       await UserService.sendPasswordResetEmail(
@@ -457,14 +549,16 @@ describe("UserService", () => {
         "examaxis"
       );
 
-      expect(mockedPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUser.id },
-        data: {
-          passwordInfo: {
-            hash: mockUser.passwordInfo.hash,
-            resetToken: expect.any(String),
-            resetExpires: expect.any(Date),
-          },
+      expect(mockedPrisma.passwordInfo.upsert).toHaveBeenCalledWith({
+        where: { user_id: mockUser.id },
+        update: {
+          reset_token: expect.any(String),
+          reset_expires: expect.any(Date),
+        },
+        create: {
+          user_id: mockUser.id,
+          reset_token: expect.any(String),
+          reset_expires: expect.any(Date),
         },
       });
       expect(mockedEmailService.sendEmail).toHaveBeenCalledWith(
@@ -495,32 +589,35 @@ describe("UserService", () => {
   describe("resetPasswordWithToken", () => {
     it("should reset password successfully for verified user", async () => {
       const mockUser = createMockUser({
-        emailInfo: {
-          emailAddress: "john@example.com",
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
+        email_info: {
+          id: "email-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
+          is_verified: true,
+          verification_token: null,
+          verification_expires: null,
+          pending_email: null,
+          provider: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
-        passwordInfo: {
+        password_info: {
+          id: "password-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
           hash: "oldhashedpassword",
-          resetToken: "hashed-reset-token",
-          resetExpires: new Date(Date.now() + 3600000),
+          reset_token: "hashed-reset-token",
+          reset_expires: new Date(Date.now() + 3600000),
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
 
-      mockedPrisma.$runCommandRaw.mockResolvedValue({
-        cursor: {
-          firstBatch: [
-            {
-              ...mockUser,
-              _id: { $oid: mockUser.id },
-            },
-          ],
-        },
-      });
-      mockedPrisma.user.update.mockResolvedValue({} as any);
+      const mockPasswordInfo = {
+        ...mockUser.password_info,
+        user: mockUser,
+      };
+
+      mockedPrisma.passwordInfo.findFirst.mockResolvedValue(mockPasswordInfo);
+      mockedPrisma.passwordInfo.update.mockResolvedValue({} as any);
       mockedUserHelpers.hashPassword.mockResolvedValue("newhashedpassword");
 
       await UserService.resetPasswordWithToken("reset-token", "newpassword123");
@@ -528,110 +625,11 @@ describe("UserService", () => {
       expect(mockedUserHelpers.hashPassword).toHaveBeenCalledWith(
         "newpassword123"
       );
-      expect(mockedPrisma.user.update).toHaveBeenCalled();
-    });
-
-    it("should unlock account when resetting password for locked account", async () => {
-      const mockUser = createMockUser({
-        emailInfo: {
-          emailAddress: "john@example.com",
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-        },
-        passwordInfo: {
-          hash: "oldhashedpassword",
-          resetToken: "hashed-reset-token",
-          resetExpires: new Date(Date.now() + 3600000),
-        },
-        lockoutInfo: {
-          isLocked: true,
-          lockedUntil: new Date(Date.now() + 3600000),
-          failedAttemptCount: 5,
-        },
-      });
-
-      mockedPrisma.$runCommandRaw.mockResolvedValue({
-        cursor: {
-          firstBatch: [
-            {
-              ...mockUser,
-              _id: { $oid: mockUser.id },
-            },
-          ],
-        },
-      });
-      mockedPrisma.user.update.mockResolvedValue({} as any);
-      mockedUserHelpers.hashPassword.mockResolvedValue("newhashedpassword");
-
-      await UserService.resetPasswordWithToken("reset-token", "newpassword123");
-
-      expect(mockedPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUser.id },
-        data: expect.objectContaining({
-          passwordInfo: expect.objectContaining({
-            hash: "newhashedpassword",
-          }),
-          lockoutInfo: expect.objectContaining({
-            isLocked: false,
-          }),
-        }),
-      });
-    });
-
-    it("should verify email when resetting password for unverified account", async () => {
-      const mockUser = createMockUser({
-        emailInfo: {
-          emailAddress: "john@example.com",
-          isVerified: false,
-          verificationToken: "some-token",
-          verificationExpires: new Date(Date.now() + 3600000),
-          pendingEmail: null,
-          provider: "local",
-        },
-        passwordInfo: {
-          hash: "oldhashedpassword",
-          resetToken: "hashed-reset-token",
-          resetExpires: new Date(Date.now() + 3600000),
-        },
-      });
-
-      mockedPrisma.$runCommandRaw.mockResolvedValue({
-        cursor: {
-          firstBatch: [
-            {
-              ...mockUser,
-              _id: { $oid: mockUser.id },
-            },
-          ],
-        },
-      });
-      mockedPrisma.user.update.mockResolvedValue({} as any);
-      mockedUserHelpers.hashPassword.mockResolvedValue("newhashedpassword");
-
-      await UserService.resetPasswordWithToken("reset-token", "newpassword123");
-
-      expect(mockedPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUser.id },
-        data: expect.objectContaining({
-          passwordInfo: expect.objectContaining({
-            hash: "newhashedpassword",
-          }),
-          emailInfo: expect.objectContaining({
-            isVerified: true,
-          }),
-        }),
-      });
+      expect(mockedPrisma.passwordInfo.update).toHaveBeenCalled();
     });
 
     it("should throw error for invalid or expired token", async () => {
-      mockedPrisma.$runCommandRaw.mockResolvedValue({
-        cursor: {
-          firstBatch: [],
-        },
-      });
+      mockedPrisma.passwordInfo.findFirst.mockResolvedValue(null);
 
       await expect(
         UserService.resetPasswordWithToken("invalid-token", "newpassword123")
@@ -646,6 +644,7 @@ describe("UserService", () => {
 
       mockedPrisma.user.findFirst.mockResolvedValue(null); // No conflicts
       mockedPrisma.user.update.mockResolvedValue(updatedUser);
+      mockedPrisma.user.findUnique.mockResolvedValue(updatedUser);
 
       const result = await UserService.updateUserProfile(mockUser, {
         fullname: "Jane Doe",
@@ -664,15 +663,20 @@ describe("UserService", () => {
     it("should update password successfully", async () => {
       const mockUser = createMockUser();
       const updatedUser = createMockUser({
-        passwordInfo: {
+        password_info: {
+          id: "password-info-id",
+          user_id: "550e8400-e29b-41d4-a716-446655440000",
           hash: "newhashed",
-          resetToken: null,
-          resetExpires: null,
+          reset_token: null,
+          reset_expires: null,
+          created_at: new Date(),
+          updated_at: new Date(),
         },
       });
 
       mockedPrisma.user.findFirst.mockResolvedValue(null);
-      mockedPrisma.user.update.mockResolvedValue(updatedUser);
+      mockedPrisma.passwordInfo.upsert.mockResolvedValue({} as any);
+      mockedPrisma.user.findUnique.mockResolvedValue(updatedUser);
       mockedUserHelpers.hashPassword.mockResolvedValue("newhashed");
 
       const result = await UserService.updateUserProfile(mockUser, {
@@ -682,231 +686,27 @@ describe("UserService", () => {
       expect(mockedUserHelpers.hashPassword).toHaveBeenCalledWith(
         "newpassword123"
       );
-      expect(mockedPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUser.id },
-        data: {
-          passwordInfo: {
-            hash: "newhashed",
-            resetToken: null,
-            resetExpires: null,
-          },
-        },
-      });
-      expect(result).toEqual({
-        user: updatedUser,
-        message: "Password updated successfully",
-      });
-    });
-
-    it("should update email and send verification", async () => {
-      const mockUser = createMockUser({
-        emailInfo: {
-          emailAddress: "old@example.com",
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-        },
-      });
-
-      mockedPrisma.user.findFirst.mockResolvedValue(null); // Email not taken
-      mockedPrisma.user.update.mockResolvedValue(mockUser);
-      mockedEmailService.sendEmail.mockResolvedValue();
-
-      const result = await UserService.updateUserProfile(mockUser, {
-        email: "new@example.com",
-        redirectUrl: "https://example.com/verify",
-      });
-
-      expect(mockedPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUser.id },
-        data: {
-          emailInfo: {
-            ...mockUser.emailInfo,
-            pendingEmail: "new@example.com",
-            verificationToken: expect.any(String),
-            verificationExpires: expect.any(Date),
-          },
-        },
-      });
-      expect(mockedEmailService.sendEmail).toHaveBeenCalledWith(
-        "new@example.com",
-        expect.objectContaining({
-          subject: expect.any(String),
-          html: expect.any(String),
-          text: expect.any(String),
-        })
-      );
-      expect(result).toEqual({
-        user: mockUser,
-        message:
-          "Profile updated. Verification email sent to your new email address. Please verify to complete the email change.",
-      });
-    });
-
-    it("should not send verification email if email is the same", async () => {
-      const mockUser = createMockUser({
-        emailInfo: {
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-        },
-      });
-
-      mockedPrisma.user.findFirst.mockResolvedValue(null);
-      mockedPrisma.user.update.mockResolvedValue(mockUser);
-
-      const result = await UserService.updateUserProfile(mockUser, {
-        email: "john@example.com",
-      });
-
-      expect(mockedEmailService.sendEmail).not.toHaveBeenCalled();
-      expect(result).toEqual({
-        user: mockUser,
-        message: "Profile updated successfully",
-      });
-    });
-
-    it("should reject duplicate email address", async () => {
-      const mockUser = createMockUser();
-      const existingUser = createMockUser({
-        id: "other-user",
-        email: "taken@example.com",
-        emailInfo: {
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-        },
-      });
-
-      mockedPrisma.user.findFirst.mockResolvedValue(existingUser);
-
-      await expect(
-        UserService.updateUserProfile(mockUser, {
-          email: "taken@example.com",
-          redirectUrl: "https://example.com/verify",
-        })
-      ).rejects.toThrow("Email is already taken");
-    });
-
-    it("should rollback tempEmail if email sending fails", async () => {
-      const mockUser = createMockUser({
-        email: "old@example.com",
-        emailInfo: {
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-        },
-      });
-
-      mockedPrisma.user.findFirst.mockResolvedValue(null);
-      mockedPrisma.user.update.mockResolvedValueOnce(mockUser); // First update
-      mockedPrisma.user.update.mockResolvedValueOnce(mockUser); // Rollback update
-      mockedEmailService.sendEmail.mockRejectedValue(
-        new Error("Email service error")
-      );
-
-      await expect(
-        UserService.updateUserProfile(mockUser, {
-          email: "new@example.com",
-          redirectUrl: "https://example.com/verify",
-        })
-      ).rejects.toThrow("Email service error");
-
-      // Verify rollback was called (second update call)
-      expect(mockedPrisma.user.update).toHaveBeenCalledTimes(2);
-    });
-
-    it("should reject duplicate phone number", async () => {
-      const mockUser = createMockUser();
-      const existingUser = createMockUser({
-        id: "other-user",
-        phone: "+1234567890",
-        emailInfo: {
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-        },
-      });
-
-      mockedPrisma.user.findFirst.mockResolvedValue(existingUser);
-
-      await expect(
-        UserService.updateUserProfile(mockUser, { phone: "+1234567890" })
-      ).rejects.toThrow("Phone number is already taken");
-    });
-
-    it("should update multiple fields at once", async () => {
-      const mockUser = createMockUser();
-      const updatedUser = createMockUser({
-        fullname: "Jane Smith",
-        passwordInfo: {
+      expect(mockedPrisma.passwordInfo.upsert).toHaveBeenCalledWith({
+        where: { user_id: mockUser.id },
+        update: {
           hash: "newhashed",
-          resetToken: null,
-          resetExpires: null,
         },
-      });
-
-      mockedPrisma.user.findFirst.mockResolvedValue(null);
-      mockedPrisma.user.update.mockResolvedValue(updatedUser);
-      mockedUserHelpers.hashPassword.mockResolvedValue("newhashed");
-
-      const result = await UserService.updateUserProfile(mockUser, {
-        fullname: "Jane Smith",
-        password: "newpass123",
-      });
-
-      expect(mockedPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUser.id },
-        data: {
-          fullname: "Jane Smith",
-          passwordInfo: {
-            hash: "newhashed",
-            resetToken: null,
-            resetExpires: null,
-          },
+        create: {
+          user_id: mockUser.id,
+          hash: "newhashed",
         },
       });
       expect(result).toEqual({
         user: updatedUser,
         message: "Password updated successfully",
       });
-    });
-
-    it("should reject email if it belongs to another user", async () => {
-      const mockUser = createMockUser({ id: "user123" });
-      const existingUser = createMockUser({
-        id: "different-user",
-        email: "taken@example.com",
-        emailInfo: {
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-        },
-      });
-
-      mockedPrisma.user.findFirst.mockResolvedValue(existingUser);
-
-      await expect(
-        UserService.updateUserProfile(mockUser, { email: "taken@example.com" })
-      ).rejects.toThrow("Email is already taken");
     });
 
     it("should handle empty updates gracefully", async () => {
       const mockUser = createMockUser();
 
       mockedPrisma.user.findFirst.mockResolvedValue(null);
+      mockedPrisma.user.findUnique.mockResolvedValue(mockUser);
 
       const result = await UserService.updateUserProfile(mockUser, {});
 

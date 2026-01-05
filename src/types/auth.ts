@@ -1,9 +1,9 @@
-import type { User } from "@prisma/client";
+import type { UserDetails } from "./user";
 
 export interface IJWTPayload {
   userId: string;
   email: string;
-  service: string;
+  serviceId: string;
   fullname?: string;
   iat?: number;
   exp?: number;
@@ -18,8 +18,8 @@ export interface TokenPair {
 // Express Request interface extension
 declare module "express-serve-static-core" {
   interface Request {
-    user?: User;
+    user?: UserDetails;
     jwt?: IJWTPayload;
-    service?: string;
+    serviceId?: string;
   }
 }

@@ -3,79 +3,112 @@ generator client {
 }
 
 datasource db {
-  provider = "mongodb"
-  url      = env("DATABASE_URL")
+  provider = "postgresql"
+  schemas  = ["credlock"]
 }
 
 model User {
-  id       String  @id @default(auto()) @map("_id") @db.ObjectId
-  fullname String
-  email    String
-  phone    String?
-  service  String
+  id           String    @id @default(uuid()) @db.Uuid
+  fullName     String    @map("fullname")
+  email        String
+  phone        String?
+  serviceId    String    @map("service_id")
+  profileImage String?   @map("profile_image")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  emailInfo    EmailInfo
+  // Relations
+  emailInfo    EmailInfo?
   phoneInfo    PhoneInfo?
-  passwordInfo PasswordInfo
+  passwordInfo PasswordInfo?
+  lockoutInfo  LockoutInfo?
+  sessions     Session[]
 
-  profileImage String?
-  lockoutInfo  AccountLockoutInfo
-
-  isActive    Boolean   @default(true)
-  lastLoginAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  sessions Session[]
-
-  @@unique([email, service])
-  @@index([emailInfo.verificationToken])
+  @@unique([email, serviceId], name: "email_service_id")
   @@map("users")
+  @@schema("credlock")
+}
+
+model EmailInfo {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @unique @map("user_id") @db.Uuid
+  isVerified          Boolean   @default(false) @map("is_verified")
+  verificationToken   String?   @map("verification_token")
+  verificationExpires DateTime? @map("verification_expires")
+  pendingEmail        String?   @map("pending_email")
+  provider            String?   @map("provider")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([verificationToken])
+  @@map("email_info")
+  @@schema("credlock")
+}
+
+model PhoneInfo {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @unique @map("user_id") @db.Uuid
+  isVerified Boolean   @default(false) @map("is_verified")
+  lastOtp    String?   @map("last_otp")
+  otpExpires DateTime? @map("otp_expires")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("phone_info")
+  @@schema("credlock")
+}
+
+model PasswordInfo {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @unique @map("user_id") @db.Uuid
+  hash         String?   @map("hash")
+  resetToken   String?   @map("reset_token")
+  resetExpires DateTime? @map("reset_expires")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([resetToken])
+  @@map("password_info")
+  @@schema("credlock")
+}
+
+model LockoutInfo {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @unique @map("user_id") @db.Uuid
+  isLocked           Boolean   @default(false) @map("is_locked")
+  lockedUntil        DateTime? @map("locked_until")
+  failedAttemptCount Int       @default(0) @map("failed_attempt_count")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("lockout_info")
+  @@schema("credlock")
 }
 
 model Session {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId       String   @db.ObjectId
-  refreshToken String   @unique
-  userAgent    String?
-  ipAddress    String?
-  expiresAt    DateTime
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  refreshToken String   @unique @map("refresh_token")
+  userAgent    String?  @map("user_agent")
+  ipAddress    String?  @map("ip_address")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
-}
-
-// Embedded types
-
-type EmailInfo {
-  isVerified          Boolean   @default(false)
-  verificationToken   String?
-  verificationExpires DateTime?
-  pendingEmail        String?
-  provider            String?
-}
-
-type PhoneInfo {
-  isVerified Boolean   @default(false)
-  lastOtp    String?
-  otpExpires DateTime?
-}
-
-type PasswordInfo {
-  hash         String?
-  resetToken   String?
-  resetExpires DateTime?
-}
-
-type AccountLockoutInfo {
-  isLocked           Boolean   @default(false)
-  lockedUntil        DateTime?
-  failedAttemptCount Int       @default(0)
+  @@schema("credlock")
 }

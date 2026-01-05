@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../middleware/auth";
-import { extractService } from "../middleware/service";
+import { validateServiceHeader } from "../middleware/service";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -28,7 +28,7 @@ import {
 const router = Router();
 
 // Apply extractService middleware to all routes
-router.use(extractService);
+router.use(validateServiceHeader);
 
 // Public routes
 router.post("/signup", validate(registerSchema), register);

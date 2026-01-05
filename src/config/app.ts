@@ -50,6 +50,8 @@ export const config: IConfig = {
   },
 
   discordAlert: getRequiredEnvVar("DISCORD_WEBHOOK_URL"),
+  postgresqlUrl: getRequiredEnvVar("POSTGRESQL_URL"),
+
   oauth: {
     google: {
       clientId: getRequiredEnvVar("GOOGLE_CLIENT_ID"),

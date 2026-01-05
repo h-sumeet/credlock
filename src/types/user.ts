@@ -1,10 +1,16 @@
 import { AUTH_PROVIDERS } from "../constants/common";
 import type { TokenPair } from "./auth";
-import type { User } from "@prisma/client";
+import type {
+  User,
+  EmailInfo,
+  PhoneInfo,
+  PasswordInfo,
+  LockoutInfo,
+} from "@prisma/client";
 
 export interface IOAuthUser {
   email: string;
-  service: string;
+  serviceId: string;
   isVerified: boolean;
   provider: typeof AUTH_PROVIDERS.GOOGLE | typeof AUTH_PROVIDERS.GITHUB;
   displayName: string;
@@ -12,13 +18,13 @@ export interface IOAuthUser {
 }
 
 export interface LoginStoreRecord {
-  user: User;
+  user: UserDetails;
   tokens: TokenPair;
   expiresAt: number;
 }
 
 export interface UpdateUserProfile {
-  fullname?: string;
+  fullName?: string;
   email?: string;
   phone?: string;
   password?: string;
@@ -27,15 +33,15 @@ export interface UpdateUserProfile {
 
 export type UserExistsResult =
   | { exists: false }
-  | { exists: true; user: User; field: "email" | "phone" };
+  | { exists: true; user: UserDetails; field: "email" | "phone" };
 
-// Type for MongoDB raw command response
-export type MongoRawCommandResult = {
-  cursor?: {
-    firstBatch?: Array<
-      Record<string, unknown> & {
-        _id: { $oid: string } | string;
-      }
-    >;
-  };
+// User with all relations loaded
+export type UserDetails = User & {
+  emailInfo: EmailInfo;
+  phoneInfo: PhoneInfo;
+  passwordInfo: PasswordInfo;
+  lockoutInfo: LockoutInfo;
 };
+
+// Re-export Prisma types for convenience
+export type { User, EmailInfo, PhoneInfo, PasswordInfo, LockoutInfo };

@@ -17,7 +17,8 @@ export const SERVICES = {
   EXAMAXIS: "examaxis",
 } as const;
 
-export const CUSTOM_HEADERS = {
+export const HTTP_HEADERS = {
+  AUTHORIZATION: "Authorization",
   REFRESH_TOKEN: "x-refresh-token",
-  SERVICE_HEADER: "x-service",
-};
+  SERVICE_ID: "x-service-id",
+} as const;

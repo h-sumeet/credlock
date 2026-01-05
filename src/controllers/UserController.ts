@@ -20,6 +20,7 @@ import { logger } from "../helpers/logger";
 import { sendSuccess, throwError } from "../utils/response";
 import { serializeUser } from "../helpers/user";
 import { isDisposableEmail } from "../services/EmailValidation";
+import { HTTP_HEADERS } from "../constants/common";
 
 // User Registration Handler
 export const register = async (
@@ -29,7 +30,7 @@ export const register = async (
 ): Promise<void> => {
   try {
     const { fullname, email, phone, password, redirectUrl } = req.body;
-    const service = req.service!;
+    const serviceId = req.serviceId!;
 
     const isDisposable = await isDisposableEmail(email);
     if (isDisposable) {
@@ -37,7 +38,7 @@ export const register = async (
     }
 
     // Check if user with email or phone already exists
-    const userExists = await checkUserExists(email, phone, service);
+    const userExists = await checkUserExists(email, phone, serviceId);
 
     if (userExists.exists) {
       const existingUser = userExists.user;
@@ -50,9 +51,10 @@ export const register = async (
             : "User with this phone number already exists",
           409
         );
+      } else {
+        await deleteUnverifiedUser(existingUser.id);
       }
 
-      await deleteUnverifiedUser(existingUser.id);
     }
 
     // Create user with verification token
@@ -61,7 +63,7 @@ export const register = async (
       email,
       phone,
       password,
-      service
+      serviceId
     );
 
     // Send verification email (non-blocking)
@@ -123,8 +125,8 @@ export const login = async (
 ): Promise<void> => {
   try {
     const { email, password } = req.body;
-    const service = req.service!;
-    const { user, isValid } = await authenticateUser(email, password, service);
+    const serviceId = req.serviceId!;
+    const { user, isValid } = await authenticateUser(email, password, serviceId);
 
     if (!isValid || !user) throwError("Invalid email or password!", 401);
 
@@ -153,8 +155,10 @@ export const refreshToken = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const refreshToken = req.headers["x-refresh-token"] as string;
-    const tokens = await refreshAccessToken(refreshToken);
+    const refreshToken = req.headers[HTTP_HEADERS.REFRESH_TOKEN] as string;
+    const userAgent = req.headers["user-agent"];
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    const tokens = await refreshAccessToken(refreshToken, userAgent, ipAddress);
 
     sendSuccess(res, "Token refreshed successfully", { tokens });
   } catch (error) {
@@ -206,8 +210,8 @@ export const forgotPassword = async (
 ): Promise<void> => {
   try {
     const { email, redirectUrl } = req.body;
-    const service = req.service!;
-    await sendPasswordResetEmail(email, redirectUrl, service);
+    const serviceId = req.serviceId!;
+    await sendPasswordResetEmail(email, redirectUrl, serviceId);
 
     sendSuccess(
       res,

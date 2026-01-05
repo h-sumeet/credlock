@@ -7,14 +7,12 @@ import passport from "passport";
 import authRoutes from "./routes/auth";
 import oauthRoutes from "./routes/oauth";
 import healthRoutes from "./routes/health";
-import metricsRoutes from "./routes/metrics";
 import { config } from "./config/app";
 import { connect } from "./config/database";
 import { formatTimestamp } from "./utils/dayjs";
 import { logger } from "./helpers/logger";
 import { errorHandler, notFound } from "./middleware/errorHandler";
-import { metricsMiddleware } from "./middleware/metrics";
-import { CUSTOM_HEADERS } from "./constants/common";
+import { HTTP_HEADERS } from "./constants/common";
 
 /**
  * Initialize middleware configuration for the Express application
@@ -53,13 +51,13 @@ const initializeMiddlewares = (app: Application): void => {
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: [
         "Content-Type",
-        "Authorization",
-        CUSTOM_HEADERS.REFRESH_TOKEN,
-        CUSTOM_HEADERS.SERVICE_HEADER,
+        HTTP_HEADERS.AUTHORIZATION,
+        HTTP_HEADERS.REFRESH_TOKEN,
+        HTTP_HEADERS.SERVICE_ID,
       ],
       exposedHeaders: [
-        CUSTOM_HEADERS.REFRESH_TOKEN,
-        CUSTOM_HEADERS.SERVICE_HEADER,
+        HTTP_HEADERS.REFRESH_TOKEN,
+        HTTP_HEADERS.SERVICE_ID,
       ],
     })
   );
@@ -95,9 +93,6 @@ const initializeMiddlewares = (app: Application): void => {
       return `info [${formatTimestamp()}] [${ip}] "${url}" ${status} "${userAgent}"`;
     })
   );
-
-  // Metrics middleware
-  app.use(metricsMiddleware);
 };
 
 /**
@@ -107,7 +102,6 @@ const initializeRoutes = (app: Application): void => {
   app.use("/api/auth", authRoutes);
   app.use("/api/health", healthRoutes);
   app.use("/api/oauth", oauthRoutes);
-  app.use("/metrics", metricsRoutes);
 };
 
 /**

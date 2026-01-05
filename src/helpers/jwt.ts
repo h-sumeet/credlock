@@ -2,13 +2,13 @@ import jwt from "jsonwebtoken";
 import type { IJWTPayload } from "../types/auth";
 import { config } from "../config/app";
 import { throwError } from "../utils/response";
-import type { User } from "@prisma/client";
+import type { UserDetails } from "../types/user";
 
-export const generateAccessToken = (user: User): string => {
+export const generateAccessToken = (user: UserDetails): string => {
   const payload: IJWTPayload = {
     userId: user.id,
     email: user.email,
-    service: user.service,
+    serviceId: user.serviceId,
     // fullname: user.fullName,
   };
 

@@ -3,27 +3,27 @@ import dayjs from "dayjs";
 import { config } from "../config/app";
 import { generateRandomString, hashData } from "../utils/crypto";
 import { addDays, addMinutes, currentDate } from "../utils/dayjs";
-import type { User } from "@prisma/client";
+import type { UserDetails } from "../types/user";
 
 /**
  * Serialize a Prisma User object to a clean API response format
  * Removes sensitive fields like password hash and internal tokens
  */
-export const serializeUser = (user: User) => {
+export const serializeUser = (user: UserDetails) => {
   return {
     id: user.id,
-    fullname: user.fullname,
+    fullName: user.fullName,
     ...(user.profileImage && {
       profileImage: user.profileImage,
     }),
     email: user.email,
-    email_verified: user.emailInfo.isVerified,
+    emailVerified: user.emailInfo.isVerified,
     ...(user.emailInfo.provider && {
-      email_provider: user.emailInfo.provider,
+      emailProvider: user.emailInfo.provider,
     }),
     ...(user.phone && {
       phone: user.phone,
-      phone_verified: user.phoneInfo?.isVerified ?? false,
+      phoneVerified: user.phoneInfo?.isVerified ?? false,
     }),
     isActive: user.isActive,
     lastLoginAt: user.lastLoginAt,
@@ -65,7 +65,7 @@ export const generateVerificationToken = (
 };
 
 // Check if the user's account is currently locked
-export const isAccountLocked = (user: User): boolean => {
+export const isAccountLocked = (user: UserDetails): boolean => {
   return !!(
     user.lockoutInfo.isLocked &&
     user.lockoutInfo.lockedUntil &&
