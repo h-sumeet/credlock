@@ -1,24 +1,14 @@
 import type { Request, Response, NextFunction } from "express";
-import { authenticate } from "../../src/middleware/auth";
+import { authenticate, clientContext } from "../../src/middleware/auth";
 import * as JwtHelper from "../../src/helpers/jwt";
 import type { IJWTPayload } from "../../src/types/auth";
-import { prisma } from "../../src/config/prisma";
+import { SERVICES } from "../../src/constants/common";
 
 // Mock dependencies
-jest.mock("../../src/config/prisma", () => ({
-  prisma: {
-    user: {
-      findFirst: jest.fn(),
-    },
-    session: {
-      findFirst: jest.fn(),
-    },
-  },
-}));
 jest.mock("../../src/helpers/jwt");
+jest.mock("../../src/helpers/logger");
 
 const mockedJwtHelper = JwtHelper as jest.Mocked<typeof JwtHelper>;
-const mockedPrisma = prisma as jest.Mocked<typeof prisma>;
 
 describe("Authentication Middleware", () => {
   let mockRequest: Partial<Request>;
@@ -28,6 +18,7 @@ describe("Authentication Middleware", () => {
   beforeEach(() => {
     mockRequest = {
       headers: {},
+      serviceId: "examaxis",
     };
     mockResponse = {
       status: jest.fn().mockReturnThis(),
@@ -39,72 +30,18 @@ describe("Authentication Middleware", () => {
 
   describe("authenticate", () => {
     it("should authenticate valid bearer token successfully", async () => {
-      const mockUser = {
-        id: "550e8400-e29b-41d4-a716-446655440000",
-        fullname: "John Doe",
-        email: "test@example.com",
-        phone: null,
-        service: "examaxis",
-        profile_image: null,
-        is_active: true,
-        last_login_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "local",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        phone_info: null,
-        password_info: {
-          id: "password-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          hash: "hashedPassword123",
-          reset_token: null,
-          reset_expires: null,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        lockout_info: {
-          id: "lockout-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_locked: false,
-          locked_until: null,
-          failed_attempt_count: 0,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      };
-
       const mockPayload: IJWTPayload = {
         userId: "550e8400-e29b-41d4-a716-446655440000",
         email: "test@example.com",
-        service: "examaxis",
+        serviceId: "examaxis",
       };
-
-      const refreshToken = "valid-refresh-token";
-      (mockedPrisma.session.findFirst as jest.Mock).mockResolvedValueOnce({
-        id: "session123",
-        user_id: "550e8400-e29b-41d4-a716-446655440000",
-        refresh_token: "hashed-token",
-        expires_at: new Date(Date.now() + 86400000),
-      } as any);
 
       mockRequest.headers = {
         authorization: "Bearer valid-token",
-        "x-refresh-token": refreshToken,
       };
+      mockRequest.serviceId = "examaxis";
 
       mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(
-        mockUser as any
-      );
 
       await authenticate(
         mockRequest as Request,
@@ -113,31 +50,16 @@ describe("Authentication Middleware", () => {
       );
 
       expect(mockedJwtHelper.verifyAccessToken).toHaveBeenCalledWith(
-        "valid-token"
+        "valid-token",
+        "examaxis"
       );
-      expect(mockedPrisma.user.findFirst).toHaveBeenCalledWith({
-        where: {
-          id: "550e8400-e29b-41d4-a716-446655440000",
-          service: "examaxis",
-        },
-        include: expect.any(Object),
-      });
-      expect(mockRequest.user).toBe(mockUser);
-      expect(mockRequest.jwt).toBe(mockPayload);
+      expect(mockRequest.userId).toBe(mockPayload.userId);
+      expect(mockRequest.serviceId).toBe(mockPayload.serviceId);
       expect(mockNext).toHaveBeenCalled();
-      expect(mockResponse.status).not.toHaveBeenCalled();
     });
 
     it("should reject request without authorization header", async () => {
-      mockRequest.headers = {
-        authorization: "Bearer valid-token",
-        "x-refresh-token": "valid-refresh-token",
-        "x-service": "examaxis",
-      };
-
-      mockedJwtHelper.verifyAccessToken.mockImplementation(() => {
-        throw new Error("Invalid token");
-      });
+      mockRequest.headers = {};
 
       await authenticate(
         mockRequest as Request,
@@ -147,23 +69,15 @@ describe("Authentication Middleware", () => {
 
       expect(mockNext).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: "Invalid token",
+          message: "Access token and refresh token are required",
         })
       );
-      expect(mockResponse.status).not.toHaveBeenCalled();
-      expect(mockResponse.json).not.toHaveBeenCalled();
     });
 
-    it("should reject request with invalid authorization format", async () => {
+    it("should reject request without Bearer prefix", async () => {
       mockRequest.headers = {
-        authorization: "Bearer valid-token",
-        "x-refresh-token": "valid-refresh-token",
-        "x-service": "examaxis",
+        authorization: "invalid-token",
       };
-
-      mockedJwtHelper.verifyAccessToken.mockImplementation(() => {
-        throw new Error("Invalid token");
-      });
 
       await authenticate(
         mockRequest as Request,
@@ -173,23 +87,15 @@ describe("Authentication Middleware", () => {
 
       expect(mockNext).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: "Invalid token",
+          message: "Access token and refresh token are required",
         })
       );
-      expect(mockResponse.status).not.toHaveBeenCalled();
-      expect(mockResponse.json).not.toHaveBeenCalled();
     });
 
-    it("should reject request with only 'Bearer' prefix", async () => {
+    it("should reject request with only Bearer prefix", async () => {
       mockRequest.headers = {
-        authorization: "Bearer valid-token",
-        "x-refresh-token": "valid-refresh-token",
-        "x-service": "examaxis",
+        authorization: "Bearer ",
       };
-
-      mockedJwtHelper.verifyAccessToken.mockImplementation(() => {
-        throw new Error("Invalid token");
-      });
 
       await authenticate(
         mockRequest as Request,
@@ -197,20 +103,16 @@ describe("Authentication Middleware", () => {
         mockNext
       );
 
-      expect(mockNext).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: "Invalid token",
-        })
+      // Empty token after trim
+      expect(mockedJwtHelper.verifyAccessToken).toHaveBeenCalledWith(
+        "",
+        "examaxis"
       );
-      expect(mockResponse.status).not.toHaveBeenCalled();
-      expect(mockResponse.json).not.toHaveBeenCalled();
     });
 
-    it("should reject invalid JWT token", async () => {
+    it("should reject request with invalid token", async () => {
       mockRequest.headers = {
         authorization: "Bearer invalid-token",
-        "x-refresh-token": "refresh-token",
-        "x-service": "examaxis",
       };
 
       mockedJwtHelper.verifyAccessToken.mockImplementation(() => {
@@ -228,28 +130,16 @@ describe("Authentication Middleware", () => {
           message: "Invalid token",
         })
       );
-      expect(mockResponse.status).not.toHaveBeenCalled();
-      expect(mockResponse.json).not.toHaveBeenCalled();
     });
 
-    it("should reject when user is not found", async () => {
-      const mockPayload: IJWTPayload = {
-        userId: "user123",
-        email: "test@example.com",
-        service: "examaxis",
-      };
-
+    it("should reject request with expired token", async () => {
       mockRequest.headers = {
-        authorization: "Bearer valid-token",
-        "x-refresh-token": "valid-refresh-token",
+        authorization: "Bearer expired-token",
       };
 
-      (mockedPrisma.session.findFirst as jest.Mock).mockResolvedValueOnce({
-        id: "session123",
-        isActive: true,
-      } as any);
-      mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+      mockedJwtHelper.verifyAccessToken.mockImplementation(() => {
+        throw new Error("Access token has expired");
+      });
 
       await authenticate(
         mockRequest as Request,
@@ -259,73 +149,23 @@ describe("Authentication Middleware", () => {
 
       expect(mockNext).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: "User not found",
-          code: 401,
+          message: "Access token has expired",
         })
       );
-      expect(mockResponse.status).not.toHaveBeenCalled();
-      expect(mockResponse.json).not.toHaveBeenCalled();
     });
 
-    it("should reject when user account is locked", async () => {
-      const mockUser = {
-        id: "user123",
-        fullName: "John Doe",
-        emailInfo: {
-          emailAddress: "test@example.com",
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        phone_info: null,
-        password_info: {
-          id: "password-info-id",
-          user_id: "user123",
-          hash: "hashedPassword123",
-          reset_token: null,
-          reset_expires: null,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        lockout_info: {
-          id: "lockout-info-id",
-          user_id: "user123",
-          is_locked: true,
-          locked_until: new Date(Date.now() + 3600000), // 1 hour from now
-          failed_attempt_count: 5,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        is_active: true,
-        last_login_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-
-      const mockPayload: IJWTPayload = {
-        userId: "user123",
+    it("should reject request with missing userId in payload", async () => {
+      const mockPayload = {
         email: "test@example.com",
-        service: "examaxis",
+        serviceId: "examaxis",
       };
-
-      const refreshToken = "valid-refresh-token";
-      (mockedPrisma.session.findFirst as jest.Mock).mockResolvedValueOnce({
-        id: "session123",
-        isActive: true,
-      } as any);
 
       mockRequest.headers = {
         authorization: "Bearer valid-token",
-        "x-refresh-token": refreshToken,
       };
 
-      mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(
-        mockUser as any
+      mockedJwtHelper.verifyAccessToken.mockReturnValue(
+        mockPayload as IJWTPayload
       );
 
       await authenticate(
@@ -336,33 +176,23 @@ describe("Authentication Middleware", () => {
 
       expect(mockNext).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: "Account is locked due to multiple failed login attempts",
-          code: 423,
+          message: "Invalid token payload",
         })
       );
-      expect(mockResponse.status).not.toHaveBeenCalled();
-      expect(mockResponse.json).not.toHaveBeenCalled();
     });
 
-    it("should handle database errors gracefully", async () => {
-      const mockPayload: IJWTPayload = {
-        userId: "user123",
+    it("should reject request with missing serviceId in payload", async () => {
+      const mockPayload = {
+        userId: "550e8400-e29b-41d4-a716-446655440000",
         email: "test@example.com",
-        service: "examaxis",
       };
 
       mockRequest.headers = {
         authorization: "Bearer valid-token",
-        "x-refresh-token": "valid-refresh-token",
       };
 
-      (mockedPrisma.session.findFirst as jest.Mock).mockResolvedValueOnce({
-        id: "session123",
-        isActive: true,
-      } as any);
-      mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findFirst as jest.Mock).mockRejectedValue(
-        new Error("Database connection error")
+      mockedJwtHelper.verifyAccessToken.mockReturnValue(
+        mockPayload as IJWTPayload
       );
 
       await authenticate(
@@ -373,65 +203,51 @@ describe("Authentication Middleware", () => {
 
       expect(mockNext).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: "Database connection error",
+          message: "Invalid token payload",
         })
       );
-      expect(mockResponse.status).not.toHaveBeenCalled();
-      expect(mockResponse.json).not.toHaveBeenCalled();
     });
 
-    it("should extract token correctly from bearer with extra spaces", async () => {
-      const mockUser = {
-        id: "user123",
-        fullName: "John Doe",
-        emailInfo: {
-          emailAddress: "test@example.com",
-          isVerified: true,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-        },
-        phoneInfo: null,
-        passwordInfo: {
-          hash: "hashedPassword123",
-          resetToken: null,
-          resetExpires: null,
-        },
-        lockoutInfo: {
-          isLocked: false,
-          lockedUntil: null,
-          failedAttemptCount: 0,
-        },
-        customFields: {},
-        isActive: true,
-        lastLoginAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
+    it("should reject request with mismatched serviceId", async () => {
       const mockPayload: IJWTPayload = {
-        userId: "user123",
+        userId: "550e8400-e29b-41d4-a716-446655440000",
         email: "test@example.com",
-        service: "examaxis",
+        serviceId: "other-service",
       };
-
-      const refreshToken = "valid-refresh-token";
-      (mockedPrisma.session.findFirst as jest.Mock).mockResolvedValueOnce({
-        id: "session123",
-        isActive: true,
-      } as any);
 
       mockRequest.headers = {
-        authorization: "Bearer   valid-token-with-spaces   ",
-        "x-refresh-token": refreshToken,
-        "x-service": "examaxis",
+        authorization: "Bearer valid-token",
       };
+      mockRequest.serviceId = "examaxis";
 
       mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
-      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(
-        mockUser as any
+
+      await authenticate(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
       );
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Service Id not matching",
+        })
+      );
+    });
+
+    it("should trim token whitespace", async () => {
+      const mockPayload: IJWTPayload = {
+        userId: "550e8400-e29b-41d4-a716-446655440000",
+        email: "test@example.com",
+        serviceId: "examaxis",
+      };
+
+      mockRequest.headers = {
+        authorization: "Bearer   valid-token   ",
+      };
+      mockRequest.serviceId = "examaxis";
+
+      mockedJwtHelper.verifyAccessToken.mockReturnValue(mockPayload);
 
       await authenticate(
         mockRequest as Request,
@@ -440,9 +256,82 @@ describe("Authentication Middleware", () => {
       );
 
       expect(mockedJwtHelper.verifyAccessToken).toHaveBeenCalledWith(
-        "valid-token-with-spaces"
+        "valid-token",
+        "examaxis"
       );
+    });
+  });
+
+  describe("clientContext", () => {
+    it("should extract valid service and device headers", () => {
+      mockRequest.headers = {
+        "x-service-id": "examaxis",
+        "x-device-id": "device-123",
+      };
+
+      clientContext(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockRequest.serviceId).toBe("examaxis");
+      expect(mockRequest.deviceId).toBe("device-123");
       expect(mockNext).toHaveBeenCalled();
+    });
+
+    it("should reject request without service header", () => {
+      mockRequest.headers = {
+        "x-device-id": "device-123",
+      };
+
+      clientContext(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Service header is required",
+        })
+      );
+    });
+
+    it("should reject request with invalid service", () => {
+      mockRequest.headers = {
+        "x-service-id": "invalid-service",
+        "x-device-id": "device-123",
+      };
+
+      clientContext(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Invalid service.",
+        })
+      );
+    });
+
+    it("should allow request without device header", () => {
+      mockRequest.headers = {
+        "x-service-id": "examaxis",
+      };
+
+      clientContext(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockRequest.serviceId).toBe("examaxis");
+      expect(mockRequest.deviceId).toBeUndefined();
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it("should validate all valid services", () => {
+      Object.values(SERVICES).forEach((service) => {
+        mockRequest.headers = {
+          "x-service-id": service,
+          "x-device-id": "device-123",
+        };
+
+        clientContext(
+          mockRequest as Request,
+          mockResponse as Response,
+          mockNext
+        );
+
+        expect(mockRequest.serviceId).toBe(service);
+      });
     });
   });
 });

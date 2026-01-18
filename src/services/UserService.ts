@@ -15,85 +15,89 @@ import {
   generateEmailVerificationTemplate,
   generatePasswordResetTemplate,
 } from "../templates/emailTemplates";
-import type {
-  UpdateUserProfile,
-  UserExistsResult,
-  UserDetails,
-} from "../types/user";
-import { logger } from "../helpers/logger";
-
-// Include options for user queries with relations
-const userInclude = {
-  emailInfo: true,
-  phoneInfo: true,
-  passwordInfo: true,
-  lockoutInfo: true,
-} as const;
+import type { UpdateUserProfile, UserExistsResult } from "../types/user";
+import type { User } from "@prisma/client";
+import {
+  EMAIL_TOKEN_EXPIRY_IN_MINUTES,
+  PASSWORD_TOKEN_EXPIRY_IN_MINUTES,
+} from "../constants/common";
 
 // Check if a user exists by email or phone, excluding a specific user ID if provided
 export const checkUserExists = async (
-  email?: string,
-  phone?: string,
-  service?: string,
-  userId?: string
+  email: string,
 ): Promise<UserExistsResult> => {
-  if (email && service) {
-    const existingUser = await prisma.user.findUnique({
-      where: {
-        email_service_id: {
-          email: email.trim(),
-          serviceId: service,
-        },
-      },
-      include: userInclude,
-    });
+  const existingUser = await prisma.user.findUnique({
+    where: { email },
+    include: { emailInfo: true },
+  });
 
-    if (existingUser) {
+  if (existingUser) {
+    if (
+      existingUser.emailInfo &&
+      existingUser.emailInfo.isVerified
+    ) {
       return {
         exists: true,
-        user: existingUser as UserDetails,
-        field: "email",
+        user: existingUser as User,
       };
+    } else {
+      // delete unverified user.
+      await deleteUserById(existingUser.id);
+      return { exists: false };
     }
-  }
-
-  if (phone && service) {
-    // TODO: Add unique constraint for phone + service in the database for efficiency
   }
 
   return { exists: false };
 };
 
-// Delete an unverified user by ID
-export const deleteUnverifiedUser = async (userId: string): Promise<void> => {
+// Delete an user by ID
+export const deleteUserById = async (userId: string): Promise<void> => {
   // Delete user (cascade will handle related records)
   await prisma.user.delete({
     where: { id: userId },
   });
 };
 
+// Get user by userId
+export const getUserById = async (userId: string): Promise<User> => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throwError("User not found", 404);
+  }
+
+  return user;
+};
+
 // Create a new user with email verification token
 export const createUserWithVerification = async (
-  fullname: string,
+  name: string,
   email: string,
   phone: string | undefined,
   password: string,
-  serviceId: string
-): Promise<{ user: UserDetails; verificationToken: string }> => {
-  const hashedPassword = await hashPassword(password);
-  const { token, hashed, expires } = generateVerificationToken(1, "days");
+  redirectUrl: string
+): Promise<{ message: string }> => {
+  const userExists = await checkUserExists(email);
+  if (userExists.exists) {
+    throwError("User with this email already exists");
+  }
 
-  const user = await prisma.user.create({
+  const hashedPassword = await hashPassword(password);
+  const { token, hashed, expires } = generateVerificationToken(
+    EMAIL_TOKEN_EXPIRY_IN_MINUTES
+  );
+
+  await prisma.user.create({
     data: {
-      fullName: fullname,
+      name,
       email,
-      serviceId,
       ...(phone && { phone }),
       emailInfo: {
         create: {
-          isVerified: false,
-          verificationToken: hashed,
-          verificationExpires: expires,
+          token: hashed,
+          tokenExpires: expires,
         },
       },
       passwordInfo: {
@@ -101,54 +105,34 @@ export const createUserWithVerification = async (
           hash: hashedPassword,
         },
       },
-      ...(phone && {
-        phone_info: {
-          create: {
-            is_verified: false,
-          },
-        },
-      }),
-      lockoutInfo: {
-        create: {
-          isLocked: false,
-          failedAttemptCount: 0,
-        },
-      },
     },
-    include: userInclude,
   });
 
-  return { user: user as UserDetails, verificationToken: token };
-};
-
-// Send email verification email
-export const sendEmailVerification = async (
-  email: string,
-  fullname: string,
-  verificationToken: string,
-  redirectUrl: string,
-  isEmailChange: boolean = false
-): Promise<void> => {
   const emailTemplate = await generateEmailVerificationTemplate(
-    fullname,
-    verificationToken,
+    name,
+    token,
     redirectUrl,
-    isEmailChange
+    false
   );
   await sendEmail(email, emailTemplate);
+
+  return {
+    message:
+      "User registered successfully. Please check your email for verification.",
+  };
 };
 
 // Verify email using a verification token and update verification status
 export const verifyEmailWithToken = async (
   token: string
-): Promise<{ user: UserDetails; isNewlyVerified: boolean }> => {
+): Promise<{ user: User }> => {
   const hashedToken = hashData(token);
 
   // Find user by verification token using standard Prisma query
   const emailInfo = await prisma.emailInfo.findFirst({
     where: {
-      verificationToken: hashedToken,
-      verificationExpires: { gt: currentDate() },
+      token: hashedToken,
+      tokenExpires: { gt: currentDate() },
     },
   });
 
@@ -157,154 +141,123 @@ export const verifyEmailWithToken = async (
   }
 
   const userId = emailInfo.userId;
-  const isNewlyVerified = !emailInfo.isVerified;
-  const pendingEmail = emailInfo.pendingEmail;
+  const emailInfoId = emailInfo.id;
 
-  // Handle email change verification
-  if (pendingEmail) {
-    const emailTaken = await prisma.user.findFirst({
-      where: {
-        email: pendingEmail,
-        id: { not: userId },
+  // Update user's email to pending email if exists
+  if (emailInfo.pendingEmail) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        email: emailInfo.pendingEmail,
       },
     });
-
-    if (emailTaken) {
-      throwError("Email address is already in use", 409);
-    }
   }
 
-  // Update both tables atomically in a single transaction
-  await prisma.$transaction([
-    ...(pendingEmail
-      ? [
-          prisma.user.update({
-            where: { id: userId },
-            data: { email: pendingEmail },
-          }),
-        ]
-      : []),
-    prisma.emailInfo.update({
-      where: { userId },
-      data: {
-        isVerified: true,
-        verificationToken: null,
-        verificationExpires: null,
-        pendingEmail: null,
-      },
-    }),
-  ]);
-
-  // Extract the user from the last result (it's always the last operation)
-  const updatedUser = await prisma.user.findUnique({
-    where: { id: userId },
-    include: userInclude,
+  await prisma.emailInfo.update({
+    where: { id: emailInfoId },
+    data: {
+      isVerified: true,
+      token: null,
+      tokenExpires: null,
+    },
   });
 
-  logger.info("Email verified successfully", {
-    userId,
-    email: updatedUser!.email,
-    isNewlyVerified,
-    wasEmailChange: !!pendingEmail,
-  });
+  const user = await getUserById(userId);
 
-  return {
-    user: updatedUser as UserDetails,
-    isNewlyVerified,
-  };
+  return { user };
 };
 
 // Authenticate a user with email and password
 export const authenticateUser = async (
   email: string,
   password: string,
-  service: string
-): Promise<{ user: UserDetails | null; isValid: boolean }> => {
+): Promise<{ user: User }> => {
   const user = await prisma.user.findUnique({
-    where: {
-      email_service_id: {
-        email: email.trim(),
-        serviceId: service,
+    where: { email },
+    select: {
+      id: true,
+      provider: true,
+      passwordInfo: {
+        select: { hash: true },
+      },
+      lockoutInfo: {
+        select: { lockedUntil: true, failedAttemptCount: true },
+      },
+      emailInfo: {
+        select: { isVerified: true },
       },
     },
-    include: userInclude,
   });
 
   // User not found
   if (!user) {
-    return { user: null, isValid: false };
+    throwError("Invalid email or password!", 401);
   }
 
-  const userDetails = user as UserDetails;
-  const emailInfo = userDetails.emailInfo;
-  const passwordData = userDetails.passwordInfo;
+  if (user.emailInfo && !user.emailInfo.isVerified) {
+    throwError("Please verify your email before logging in", 403);
+  }
 
-  if (emailInfo?.provider && !passwordData?.hash) {
+  if (user.lockoutInfo && isAccountLocked(user.lockoutInfo.lockedUntil)) {
     throwError(
-      `This account is linked to ${emailInfo.provider}. Please sign in using ${emailInfo.provider}, or set a password using 'Forgot Password' to enable password login.`,
+      "This account is locked due to multiple failed login attempts. Please try again later or reset your password.",
       403
     );
   }
 
-  // Email not verified
-  if (!emailInfo?.isVerified) {
-    throwError("Please verify your email before logging in", 403);
-  }
-
-  // Account is locked
-  if (isAccountLocked(userDetails)) {
+  const passwordData = user.passwordInfo;
+  if (user.provider && !passwordData?.hash) {
     throwError(
-      "Account is temporarily locked due to multiple failed login attempts",
-      423
+      `This account is linked to ${user.provider}. Please sign in using ${user.provider}, or set a password using 'Forgot Password' to enable password login.`,
+      403
     );
   }
 
   // Password does not match
   if (!(await comparePassword(passwordData?.hash ?? null, password))) {
-    await incrementFailedLoginAttempts(userDetails);
-    return { user: userDetails, isValid: false };
+    incrementFailedLoginAttempts(user.id);
+    throwError("Invalid email or password!", 401);
   }
 
-  // Reset failed login attempts
-  const lockout = userDetails.lockoutInfo;
-  if (lockout && lockout.failedAttemptCount > 0) {
-    await resetFailedLoginAttempts(userDetails.id);
+  // Reset failed login attempts on successful login
+  if (user.lockoutInfo) {
+    resetFailedLoginAttempts(user.id);
   }
 
-  await prisma.user.update({
+  // Update last login timestamp (non blocking action)
+  const updatedUser = await prisma.user.update({
     where: { id: user.id },
-    data: { lastLoginAt: currentDate() },
+    data: {
+      lastLoginAt: currentDate(),
+    },
   });
 
-  return { user: userDetails, isValid: true };
+  return { user: updatedUser };
 };
 
-// Increment the count of failed login attempts and lock account if needed
+// Increment failed login attempt
 export const incrementFailedLoginAttempts = async (
-  user: UserDetails
+  userId: string
 ): Promise<void> => {
-  const { maxLoginAttempts, loginLockTime } = config.security;
+  const lockoutInfo = await prisma.lockoutInfo.findUnique({
+    where: { userId: userId },
+  });
 
-  const lockout = user.lockoutInfo;
-  const newAttempts = (lockout?.failedAttemptCount ?? 0) + 1;
-  const shouldLock = newAttempts >= maxLoginAttempts;
+  const failedAttemptCount = lockoutInfo
+    ? lockoutInfo.failedAttemptCount + 1
+    : 1;
+  const isLocked = config.security.maxLoginAttempts <= failedAttemptCount;
 
   await prisma.lockoutInfo.upsert({
-    where: { userId: user.id },
+    where: { userId },
     update: {
-      failedAttemptCount: newAttempts,
-      isLocked: shouldLock,
-      ...(shouldLock && {
-        lockedUntil: addMinutes(loginLockTime),
-      }),
+      failedAttemptCount: failedAttemptCount,
+      lockedUntil: isLocked ? addMinutes(config.security.loginLockTime) : null,
     },
     create: {
-      userId: user.id,
-      failedAttemptCount: newAttempts,
-      isLocked: shouldLock,
-      ...(shouldLock && {
-        lockedUntil: addMinutes(loginLockTime),
-      }),
+      userId: userId,
+      failedAttemptCount: failedAttemptCount,
+      lockedUntil: isLocked ? addMinutes(config.security.loginLockTime) : null,
     },
   });
 };
@@ -313,13 +266,8 @@ export const incrementFailedLoginAttempts = async (
 export const resetFailedLoginAttempts = async (
   userId: string
 ): Promise<void> => {
-  await prisma.lockoutInfo.update({
+  await prisma.lockoutInfo.deleteMany({
     where: { userId: userId },
-    data: {
-      failedAttemptCount: 0,
-      isLocked: false,
-      lockedUntil: null,
-    },
   });
 };
 
@@ -327,35 +275,32 @@ export const resetFailedLoginAttempts = async (
 export const sendPasswordResetEmail = async (
   email: string,
   redirectUrl: string,
-  service: string
 ): Promise<void> => {
-  const user = await prisma.user.findFirst({
-    where: {
-      email,
-      service,
-    },
-    include: userInclude,
-  });
+  const existingUser = await checkUserExists(email);
 
-  if (!user) return;
+  if (!existingUser.exists) {
+    throwError("Don't have an account with that email", 404);
+  }
 
+  const user = existingUser.user;
   const resetToken = generateRandomString(32);
+  const hashedResetToken = hashData(resetToken);
 
   await prisma.passwordInfo.upsert({
     where: { userId: user.id },
     update: {
-      resetToken: hashData(resetToken),
-      resetExpires: addMinutes(30),
+      token: hashedResetToken,
+      tokenExpires: addMinutes(PASSWORD_TOKEN_EXPIRY_IN_MINUTES),
     },
     create: {
       userId: user.id,
-      resetToken: hashData(resetToken),
-      resetExpires: addMinutes(30),
+      token: hashedResetToken,
+      tokenExpires: addMinutes(PASSWORD_TOKEN_EXPIRY_IN_MINUTES),
     },
   });
 
   const emailTemplate = await generatePasswordResetTemplate(
-    user.fullName,
+    user.name,
     resetToken,
     redirectUrl
   );
@@ -373,13 +318,8 @@ export const resetPasswordWithToken = async (
   // Find password info by reset token
   const passwordInfo = await prisma.passwordInfo.findFirst({
     where: {
-      resetToken: hashedToken,
-      resetExpires: { gt: currentDate() },
-    },
-    include: {
-      user: {
-        include: userInclude,
-      },
+      token: hashedToken,
+      tokenExpires: { gt: currentDate() },
     },
   });
 
@@ -389,175 +329,139 @@ export const resetPasswordWithToken = async (
 
   const userId = passwordInfo.userId;
   const hashedPassword = await hashPassword(newPassword);
-  const user = passwordInfo.user as UserDetails;
-  const lockoutInfo = user.lockoutInfo;
-  const emailInfo = user.emailInfo;
 
-  const isLocked = lockoutInfo?.isLocked ?? false;
-  const isEmailUnverified = !emailInfo?.isVerified;
   // Update password info
   await prisma.passwordInfo.update({
     where: { userId: userId },
     data: {
       hash: hashedPassword,
-      resetToken: null,
-      resetExpires: null,
+      token: null,
+      tokenExpires: null,
     },
   });
 
-  // Unlock account if needed
-  if (isLocked && lockoutInfo) {
-    await prisma.lockoutInfo.update({
-      where: { userId: userId },
-      data: {
-        isLocked: false,
-        lockedUntil: null,
-        failedAttemptCount: 0,
-      },
-    });
-  }
-
-  // Verify email if needed
-  if (isEmailUnverified && emailInfo) {
-    await prisma.emailInfo.update({
-      where: { userId: userId },
-      data: {
-        isVerified: true,
-        verificationToken: null,
-        verificationExpires: null,
-      },
-    });
-  }
-
-  // Revoke all user sessions
+  // Revoke all user sessions and reset failed login attempts
+  await resetFailedLoginAttempts(userId);
   await revokeAllUserSessions(userId);
 };
 
 // Update user profile
 export const updateUserProfile = async (
-  user: UserDetails,
+  userId: string,
   updates: UpdateUserProfile
-): Promise<{ user: UserDetails; message: string }> => {
-  const { fullName, phone, email, password, redirectUrl } = updates;
+): Promise<{ user: User; message: string }> => {
+  const { name, phone, password } = updates;
 
-  const emailInfo = user.emailInfo;
-  let message: string = "Profile updated successfully";
-  let updatedUser = user;
+  // Hash password if provided
+  const hashedPassword = password ? await hashPassword(password) : undefined;
 
-  // Validate email/phone availability
-  if (email) {
-    const userExists = await checkUserExists(
-      email,
-      phone,
-      user.serviceId,
-      user.id
-    );
-
-    if (userExists.exists) {
-      const existingUser = userExists.user;
-      const existingEmailInfo = existingUser.emailInfo;
-      if (existingEmailInfo?.isVerified) {
-        throwError(
-          userExists.field === "email"
-            ? "Email is already taken"
-            : "Phone number is already taken",
-          409
-        );
-      } else {
-        await deleteUnverifiedUser(existingUser.id);
-      }
-    }
-  }
-
-  // Handle email update with verification workflow
-  if (email && email !== user.email) {
-    // Generate email verification token
-    const { token, hashed, expires } = generateVerificationToken(1, "days");
-
-    try {
-      // Update email info with pending email and verification token
-      await prisma.emailInfo.update({
-        where: { userId: user.id },
-        data: {
-          pendingEmail: email,
-          verificationToken: hashed,
-          verificationExpires: expires,
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      ...(name && { name }),
+      ...(phone && { phone }),
+      ...(hashedPassword && {
+        passwordInfo: {
+          update: {
+            hash: hashedPassword,
+          },
         },
-      });
+      }),
+    },
+    include: {
+      passwordInfo: true,
+    },
+  });
 
-      // Send verification email to new email address
-      await sendEmailVerification(
-        email,
-        user.fullName,
-        token,
-        redirectUrl!,
-        true
-      );
-
-      message =
-        "Profile updated. Verification email sent to your new email address. Please verify to complete the email change.";
-    } catch (error) {
-      // Rollback pending email on email send failure
-      await prisma.emailInfo.update({
-        where: { userId: user.id },
-        data: {
-          pendingEmail: null,
-          verificationToken: emailInfo?.verificationToken ?? null,
-          verificationExpires: emailInfo?.verificationExpires ?? null,
-        },
-      });
-
-      throw error;
-    }
+  // Revoke all sessions if password was changed
+  if (hashedPassword) {
+    await revokeAllUserSessions(userId);
   }
 
-  // Prepare update data for other fields
-  const updateData: {
-    fullName?: string;
-    phone?: string;
-  } = {};
+  return {
+    user,
+    message: hashedPassword
+      ? "Profile updated successfully. Please login again with your new password."
+      : "Profile updated successfully",
+  };
+};
 
-  // Update fullname
-  if (fullName) {
-    updateData.fullName = fullName;
+export const updateEmailWithVerification = async (
+  userId: string,
+  newEmail: string,
+  redirectUrl: string
+): Promise<{ message: string }> => {
+  // Check if email already exists for the same service
+  const user = await getUserById(userId);
+
+  const existingUser = await checkUserExists(newEmail);
+  if (existingUser.exists) {
+    throwError("Email already in use", 409);
   }
 
-  // TODO: Update phone number with verification workflow
-  if (phone && phone !== user.phone) {
-    updateData.phone = phone;
-  }
+  // Generate verification token
+  const { token, hashed, expires } = generateVerificationToken(
+    EMAIL_TOKEN_EXPIRY_IN_MINUTES
+  );
 
-  // Update password
-  if (password) {
-    const hashedPassword = await hashPassword(password);
+  // Update emailInfo with pending email and new verification token
+  await prisma.emailInfo.upsert({
+    where: { userId },
+    update: {
+      pendingEmail: newEmail.trim(),
+      token: hashed,
+      tokenExpires: expires,
+    },
+    create: {
+      userId,
+      pendingEmail: newEmail.trim(),
+      token: hashed,
+      tokenExpires: expires,
+      isVerified: false,
+    },
+  });
 
-    await prisma.passwordInfo.upsert({
-      where: { userId: user.id },
-      update: {
-        hash: hashedPassword,
-      },
-      create: {
+  // Send verification email to new address
+  const emailTemplate = await generateEmailVerificationTemplate(
+    user.name,
+    token,
+    redirectUrl,
+    true
+  );
+  await sendEmail(newEmail, emailTemplate);
+
+  return {
+    message: "Verification email sent to new email address",
+  };
+};
+
+// Archive user account by moving data to InactiveUser and deleting original user
+export const archiveUserAccount = async (userId: string): Promise<{ message: string }> => {
+  const user = await getUserById(userId);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.inactiveUser.create({
+      data: {
         userId: user.id,
-        hash: hashedPassword,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        avatar: user.avatar,
+        provider: user.provider,
+        lastLoginAt: user.lastLoginAt,
+        accountUpdatedAt: user.updatedAt,
+        accountCreatedAt: user.createdAt,
       },
     });
 
-    message = "Password updated successfully";
-  }
-
-  // Apply all updates if any exist
-  if (Object.keys(updateData).length > 0) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: updateData,
+    await tx.session.deleteMany({
+      where: { userId: user.id },
     });
-  }
 
-  // Fetch updated user with relations
-  updatedUser = (await prisma.user.findUnique({
-    where: { id: user.id },
-    include: userInclude,
-  })) as UserDetails;
+    await tx.user.delete({
+      where: { id: user.id },
+    });
+  });
 
-  return { user: updatedUser, message };
+  return { message: "Account deleted successfully" };
 };

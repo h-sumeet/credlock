@@ -5,17 +5,18 @@ import { logger } from "../helpers/logger";
 import { sendSuccess, throwError } from "../utils/response";
 import { generateRandomString } from "../utils/crypto";
 import { currentDate, addMinutes } from "../utils/dayjs";
-import { LOGIN_CODE_EXPIRY_MINUTES, SERVICES } from "../constants/common";
-import type { IOAuthUser, LoginStoreRecord, UserDetails } from "../types/user";
+import { LOGIN_CODE_EXPIRY_MINUTES } from "../constants/common";
+import type { IOAuthUser, LoginStoreRecord } from "../types/user";
 import type { TokenPair } from "../types/auth";
 import { serializeUser } from "../helpers/user";
+import type { User } from "@prisma/client";
 
 // In-memory login store with auto-expiry handling
 const createLoginStore = () => {
   const store = new Map<string, LoginStoreRecord>();
 
   // Store login code with associated user and tokens
-  const set = (code: string, user: UserDetails, tokens: TokenPair) =>
+  const set = (code: string, user: User, tokens: TokenPair) =>
     store.set(code, {
       user,
       tokens,
@@ -58,26 +59,20 @@ const authProvider =
     try {
       const redirectUrl = req.query["redirectUrl"] as string; // exchange-code endpoint of frontend
       const nextUrl = req.query["nextUrl"] as string | undefined; // redirect after login
-      const serviceId = req.query["service"] as string; // service from query params
+      const deviceId = req.query["deviceId"] as string; // deviceId from query params
 
       if (!redirectUrl) throwError("Missing redirectUrl", 400);
-      if (!serviceId) throwError("Missing service parameter", 400);
+      if (!deviceId) throwError("Missing device Id parameter", 400);
 
-      // Validate service
-      const validServices = Object.values(SERVICES) as string[];
-      if (!validServices.includes(serviceId)) {
-        throwError('Invalid service.', 400);
-      }
-
-      const state = JSON.stringify({
+      const state = JSON.stringify({  
         redirectUrl,
         nextUrl,
-        serviceId: serviceId,
+        deviceId
       });
 
-      passport.authenticate(provider, {
+      passport.authenticate('google', {
         ...options,
-        state, // redirect URL and service passed as state
+        state, 
       })(req, res, next);
     } catch (error) {
       logger.error(`${provider} authentication error`, { error });
@@ -95,21 +90,23 @@ const handleOAuthCallback = async (
   try {
     if (!req.user) throwError("User not authenticated", 401);
 
-    // Generate access/refresh tokens
-    const tokens = await generateTokenPair(
-      req.user,
-      req.headers["user-agent"],
-      req.ip || req.socket?.remoteAddress
-    );
+    const user = req.user as User;
 
     const stateParam = req.query["state"] as string;
     if (!stateParam) {
       throwError("Missing state parameter", 400);
     }
-    const { redirectUrl, nextUrl } = JSON.parse(stateParam);
+    const { redirectUrl, nextUrl, deviceId } = JSON.parse(stateParam);
+    // Generate access/refresh tokens
+    const tokens = await generateTokenPair(
+      user,
+      deviceId,
+      req.headers["user-agent"],
+      req.ip || req.socket?.remoteAddress
+    );
 
     const code = generateRandomString(); // Temporary login code
-    loginStore.set(code, req.user, tokens); // Save login session
+    loginStore.set(code, user, tokens); // Save login session
 
     const url = new URL(redirectUrl);
     url.searchParams.set("code", code);

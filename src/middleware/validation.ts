@@ -2,20 +2,21 @@ import Joi from "joi";
 import type { Request, Response, NextFunction } from "express";
 import { throwError } from "../utils/response";
 import { logger } from "../helpers/logger";
+import { HTTP_HEADERS } from "../constants/common";
 
-// Full name validation schema
-const fullnameSchema = Joi.string()
+// Name validation schema
+const nameSchema = Joi.string()
   .min(2)
   .max(100)
   .trim()
   .pattern(/^[a-zA-Z\s\-'.]+$/)
   .messages({
-    "string.min": "Full name must be at least 2 characters",
-    "string.max": "Full name cannot exceed 100 characters",
+    "string.min": "Name must be at least 2 characters",
+    "string.max": "Name cannot exceed 100 characters",
     "string.pattern.base":
-      "Full name can only contain letters, spaces, hyphens, apostrophes, and periods",
-    "string.empty": "Full name is required",
-    "any.required": "Full name is required",
+      "Name can only contain letters, spaces, hyphens, apostrophes, and periods",
+    "string.empty": "Name is required",
+    "any.required": "Name is required",
   });
 
 // Email validation schema
@@ -70,7 +71,7 @@ const redirectUrlSchema = Joi.string()
 
 // User registration validation schema
 export const registerSchema = Joi.object({
-  fullname: fullnameSchema.required(),
+  name: nameSchema.required(),
   email: emailSchema.required(),
   phone: phoneSchema.optional(),
   password: passwordSchema.required(),
@@ -85,11 +86,9 @@ export const loginSchema = Joi.object({
 
 // Profile update validation schema
 export const updateProfileSchema = Joi.object({
-  fullname: fullnameSchema.optional(),
-  email: emailSchema.optional(),
+  name: nameSchema.optional(),
   phone: phoneSchema.optional(),
   password: passwordSchema.optional(),
-  redirectUrl: redirectUrlSchema.optional(),
 })
   .custom((value, helpers) => {
     // If email is provided, redirectUrl must be provided
@@ -102,16 +101,16 @@ export const updateProfileSchema = Joi.object({
   })
   .messages({ "any.custom": "{{#message}}" });
 
-// Email verification validation schema
-export const verifyEmailSchema = Joi.object({
+// Token verification schema
+export const emailVerifyToken = Joi.object({
   token: Joi.string().required().messages({
     "string.empty": "Verification token is required",
     "any.required": "Verification token is required",
   }),
 });
 
-// Password reset request validation schema
-export const forgotPasswordSchema = Joi.object({
+// Email update verification schema
+export const verifyEmailSchema = Joi.object({
   email: emailSchema.required(),
   redirectUrl: redirectUrlSchema.required(),
 });
@@ -127,7 +126,7 @@ export const resetPasswordSchema = Joi.object({
 
 // Refresh token validation schema
 export const refreshTokenSchema = Joi.object({
-  "x-refresh-token": Joi.string().min(40).max(200).required().messages({
+  [HTTP_HEADERS.REFRESH_TOKEN]: Joi.string().min(40).max(200).required().messages({
     "string.empty": "Refresh token is required",
     "any.required": "Refresh token is required",
     "string.min": "Invalid refresh token length",
@@ -151,7 +150,6 @@ export const tokenHeaderSchema = Joi.object({
       "string.empty": "Authorization token is required",
       "any.required": "Authorization header is required",
     }),
-  "x-refresh-token": refreshTokenSchema.extract("x-refresh-token"),
 }).unknown(true);
 
 // Validation middleware function
@@ -172,9 +170,9 @@ export const validate = (
 
       // If validation failed, custom error handler will catch it
       if (error) throwError(error.details[0]!.message, 400);
-      
+
       // Replace original request data with the validated value
-      if(source !== "query") req[source] = value;
+      if (source !== "query") req[source] = value;
       next();
     } catch (err) {
       logger.error(`Validation error for ${source}:`, err);

@@ -4,20 +4,21 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("POSTGRESQL_URL")
   schemas  = ["credlock"]
 }
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  fullName     String    @map("fullname")
-  email        String
-  phone        String?
-  serviceId    String    @map("service_id")
-  profileImage String?   @map("profile_image")
-  isActive     Boolean   @default(true) @map("is_active")
-  lastLoginAt  DateTime? @map("last_login_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @map("name")
+  email       String    @unique @map("email")
+  phone       String?   @map("phone")
+  avatar      String?   @map("avatar")
+  provider    String?   @map("provider")
+  lastLoginAt DateTime? @map("last_login_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   emailInfo    EmailInfo?
@@ -26,37 +27,36 @@ model User {
   lockoutInfo  LockoutInfo?
   sessions     Session[]
 
-  @@unique([email, serviceId], name: "email_service_id")
   @@map("users")
   @@schema("credlock")
 }
 
 model EmailInfo {
-  id                  String    @id @default(uuid()) @db.Uuid
-  userId              String    @unique @map("user_id") @db.Uuid
-  isVerified          Boolean   @default(false) @map("is_verified")
-  verificationToken   String?   @map("verification_token")
-  verificationExpires DateTime? @map("verification_expires")
-  pendingEmail        String?   @map("pending_email")
-  provider            String?   @map("provider")
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @unique @map("user_id") @db.Uuid
+  isVerified   Boolean   @default(false) @map("is_verified")
+  token        String?   @map("token")
+  tokenExpires DateTime? @map("token_expires")
+  pendingEmail String?   @map("pending_email")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([verificationToken])
+  @@index([token, tokenExpires])
   @@map("email_info")
   @@schema("credlock")
 }
 
 model PhoneInfo {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @unique @map("user_id") @db.Uuid
-  isVerified Boolean   @default(false) @map("is_verified")
-  lastOtp    String?   @map("last_otp")
-  otpExpires DateTime? @map("otp_expires")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @unique @map("user_id") @db.Uuid
+  isVerified   Boolean   @default(false) @map("is_verified")
+  otp          String?   @map("otp")
+  otpExpires   DateTime? @map("otp_expires")
+  pendingPhone String?   @map("pending_phone")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -68,14 +68,14 @@ model PasswordInfo {
   id           String    @id @default(uuid()) @db.Uuid
   userId       String    @unique @map("user_id") @db.Uuid
   hash         String?   @map("hash")
-  resetToken   String?   @map("reset_token")
-  resetExpires DateTime? @map("reset_expires")
+  token        String?   @map("token")
+  tokenExpires DateTime? @map("token_expires")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([resetToken])
+  @@index([token])
   @@map("password_info")
   @@schema("credlock")
 }
@@ -83,7 +83,6 @@ model PasswordInfo {
 model LockoutInfo {
   id                 String    @id @default(uuid()) @db.Uuid
   userId             String    @unique @map("user_id") @db.Uuid
-  isLocked           Boolean   @default(false) @map("is_locked")
   lockedUntil        DateTime? @map("locked_until")
   failedAttemptCount Int       @default(0) @map("failed_attempt_count")
   createdAt          DateTime  @default(now()) @map("created_at")
@@ -98,6 +97,7 @@ model LockoutInfo {
 model Session {
   id           String   @id @default(uuid()) @db.Uuid
   userId       String   @map("user_id") @db.Uuid
+  deviceId     String   @map("device_id")
   refreshToken String   @unique @map("refresh_token")
   userAgent    String?  @map("user_agent")
   ipAddress    String?  @map("ip_address")
@@ -107,8 +107,26 @@ model Session {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, deviceId], name: "user_device_id")
+  @@index([refreshToken, expiresAt])
   @@index([userId])
-  @@index([expiresAt])
   @@map("sessions")
+  @@schema("credlock")
+}
+
+model InactiveUser {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  name               String    @map("name")
+  email              String    @map("email")
+  phone              String?   @map("phone")
+  avatar             String?   @map("avatar")
+  provider           String?   @map("provider")
+  lastLoginAt        DateTime? @map("last_login_at")
+  accountUpdatedAt   DateTime  @map("account_updated_at")
+  accountCreatedAt   DateTime  @map("account_created_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  @@map("inactive_users")
   @@schema("credlock")
 }

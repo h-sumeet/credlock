@@ -9,38 +9,31 @@ import {
   Strategy as GitHubStrategy,
   type Profile as GitHubProfile,
 } from "passport-github2";
-import { config } from "./app";
 import { prisma } from "./prisma";
-import type { UserDetails } from "../types/user";
 import { logger } from "../helpers/logger";
 import { handleGithubAuth, handleGoogleAuth } from "../services/OauthService";
 import { AUTH_PROVIDERS } from "../constants/common";
-
-// Include options for user queries with relations
-const userInclude = {
-  emailInfo: true,
-  phoneInfo: true,
-  passwordInfo: true,
-  lockoutInfo: true,
-} as const;
+import type { User } from "@prisma/client";
+import { config } from "./app";
 
 passport.serializeUser((user: Express.User, done) => {
-  done(null, (user as UserDetails).id);
+  done(null, (user as User).id);
 });
 
 passport.deserializeUser(async (id: string, done) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id },
-      include: userInclude,
     });
-    done(null, user as UserDetails | null);
+    done(null, user as User | null);
   } catch (error) {
     done(error, null);
   }
 });
 
-// Google Strategy
+/**
+ * Register Google OAuth strategy for a specific service
+ */
 passport.use(
   new GoogleStrategy(
     {
@@ -57,30 +50,22 @@ passport.use(
       done: VerifyCallback
     ) => {
       try {
-        const state = req.query["state"]
-          ? JSON.parse(req.query["state"] as string)
-          : {};
-        const serviceId = state.serviceId;
-
-        if (!serviceId) {
-          return done(new Error("Missing service in OAuth state"), undefined);
-        }
-
-        const user = await handleGoogleAuth(
-          profile,
-          AUTH_PROVIDERS.GOOGLE,
-          serviceId
-        );
+        const user = await handleGoogleAuth(profile, AUTH_PROVIDERS.GOOGLE);
         return done(null, user);
       } catch (error) {
-        logger.error("Google authentication error", { error, profile });
+        logger.error("Google authentication error", {
+          error,
+          profile,
+        });
         return done(error as Error, undefined);
       }
     }
   )
 );
 
-// GitHub Strategy
+/**
+ * Register GitHub OAuth strategy for a specific service
+ */
 passport.use(
   new GitHubStrategy(
     {
@@ -94,26 +79,18 @@ passport.use(
       accessToken: string,
       refreshToken: string,
       profile: GitHubProfile,
-      done: (error: Error | null, user?: UserDetails) => void
+      done: VerifyCallback
     ) => {
       try {
-        const state = req.query["state"]
-          ? JSON.parse(req.query["state"] as string)
-          : {};
-        const service = state.service;
-
-        if (!service) {
-          return done(new Error("Missing service in OAuth state"), undefined);
-        }
-
-        const user = await handleGithubAuth(profile, accessToken, service);
+        const user = await handleGithubAuth(profile, accessToken);
         return done(null, user);
       } catch (error) {
-        logger.error("GitHub authentication error", { error, profile });
+        logger.error("GitHub authentication error", {
+          error,
+          profile,
+        });
         return done(error as Error, undefined);
       }
     }
   )
 );
-
-export default passport;

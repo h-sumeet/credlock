@@ -6,7 +6,7 @@ import type { EmailTemplate } from "../types/email";
  * Generate email verification template
  */
 export const generateEmailVerificationTemplate = async (
-  fullname: string,
+  name: string,
   verificationToken: string,
   redirectUrl: string,
   isEmailChange: boolean = false
@@ -23,7 +23,7 @@ export const generateEmailVerificationTemplate = async (
 
   return await renderTemplate("email-verification", {
     subject: `${config.app.name} - Verify Your Email Address`,
-    fullname,
+    name,
     verificationUrl,
     message,
     footerMessage,
@@ -34,7 +34,7 @@ export const generateEmailVerificationTemplate = async (
  * Generate password reset template
  */
 export const generatePasswordResetTemplate = async (
-  fullname: string,
+  name: string,
   resetToken: string,
   redirectUrl: string
 ): Promise<EmailTemplate> => {
@@ -42,7 +42,7 @@ export const generatePasswordResetTemplate = async (
 
   return await renderTemplate("password-reset", {
     subject: `${config.app.name} - Password Reset Request`,
-    fullname,
+    name,
     resetUrl,
   });
 };

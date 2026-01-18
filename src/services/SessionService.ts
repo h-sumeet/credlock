@@ -1,35 +1,40 @@
 import { prisma } from "../config/prisma";
 import type { TokenPair } from "../types/auth";
-import type { UserDetails } from "../types/user";
-import { config } from "../config/app";
 import { generateRandomString, hashData } from "../utils/crypto";
 import { addDays, currentDate } from "../utils/dayjs";
 import { generateAccessToken } from "../helpers/jwt";
 import { throwError } from "../utils/response";
-import type { Session } from "@prisma/client";
-
-// Include options for user queries with relations
-const userInclude = {
-  emailInfo: true,
-  phoneInfo: true,
-  passwordInfo: true,
-  lockoutInfo: true,
-} as const;
+import type { User } from "@prisma/client";
+import { config } from "../config/app";
 
 /**
  * Create session with refresh token
  */
 export const createSession = async (
-  user: UserDetails,
+  user: User,
+  deviceId: string,
   userAgent?: string,
   ipAddress?: string
-): Promise<{ session: Session; refreshToken: string }> => {
+): Promise<{ refreshToken: string }> => {
   const refreshToken = generateRandomString(40);
   const expiresAt = addDays(parseInt(config.jwt.refreshExpiresIn));
 
-  const session = await prisma.session.create({
-    data: {
+  await prisma.session.upsert({
+    where: {
+      user_device_id: {
+        userId: user.id,
+        deviceId: deviceId,
+      },
+    },
+    update: {
+      refreshToken: hashData(refreshToken),
+      userAgent: userAgent || null,
+      ipAddress: ipAddress || null,
+      expiresAt,
+    },
+    create: {
       userId: user.id,
+      deviceId: deviceId,
       refreshToken: hashData(refreshToken),
       userAgent: userAgent || null,
       ipAddress: ipAddress || null,
@@ -37,23 +42,25 @@ export const createSession = async (
     },
   });
 
-  return {
-    session,
-    refreshToken,
-  };
+  return { refreshToken };
 };
 
 /**
  * Generate token pair (access token + refresh token)
  */
 export const generateTokenPair = async (
-  user: UserDetails,
+  user: User,
+  deviceId: string,
   userAgent?: string,
   ipAddress?: string
 ): Promise<TokenPair> => {
   const accessToken = generateAccessToken(user);
-  const { refreshToken } = await createSession(user, userAgent, ipAddress);
-
+  const { refreshToken } = await createSession(
+    user,
+    deviceId,
+    userAgent,
+    ipAddress
+  );
   return {
     accessToken,
     refreshToken,
@@ -66,6 +73,7 @@ export const generateTokenPair = async (
  */
 export const refreshAccessToken = async (
   refreshToken: string,
+  deviceId?: string,
   userAgent?: string,
   ipAddress?: string
 ): Promise<TokenPair> => {
@@ -77,31 +85,33 @@ export const refreshAccessToken = async (
       expiresAt: { gt: currentDate() },
     },
     include: {
-      user: {
-        include: userInclude,
-      },
+      user: true,
     },
   });
 
   if (!session) throwError("Invalid or expired refresh token");
   if (!session.user) throwError("User not found");
-
-  // Delete the old session
-  await revokeRefreshToken(refreshToken);
+  deviceId = deviceId || session.deviceId;
   // Generate new token pair
-  return generateTokenPair(session.user as UserDetails, userAgent, ipAddress);
+  return generateTokenPair(
+    session.user as User,
+    deviceId,
+    userAgent,
+    ipAddress
+  );
 };
 
 /**
  * Revoke refresh token (logout)
  */
-export const revokeRefreshToken = async (
-  refreshToken: string
+export const revokeUserSession = async (
+  userId: string,
+  deviceId: string
 ): Promise<void> => {
-  const hashedRefreshToken = hashData(refreshToken);
-  await prisma.session.delete({
+  await prisma.session.deleteMany({
     where: {
-      refreshToken: hashedRefreshToken,
+      userId,
+      deviceId,
     },
   });
 };

@@ -1,10 +1,6 @@
-import type { UserDetails } from "./user";
-
 export interface IJWTPayload {
   userId: string;
-  email: string;
-  serviceId: string;
-  fullname?: string;
+  name?: string;
   iat?: number;
   exp?: number;
 }
@@ -18,8 +14,8 @@ export interface TokenPair {
 // Express Request interface extension
 declare module "express-serve-static-core" {
   interface Request {
-    user?: UserDetails;
+    userId: string;
+    deviceId?: string;
     jwt?: IJWTPayload;
-    serviceId?: string;
   }
 }

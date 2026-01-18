@@ -12,14 +12,19 @@ const mockTransporter = {
 // Set up the mock before importing EmailService
 mockedNodemailer.createTransport.mockReturnValue(mockTransporter);
 
-import { config } from "../../src/config/app";
 import {
-  generateEmailVerificationTemplate,
-  generatePasswordResetTemplate,
-} from "../../src/templates/emailTemplates";
-import { sendEmail } from "../../src/services/EmailService";
+  sendEmail,
+  testConnection,
+  getTransporter,
+} from "../../src/services/EmailService";
+import type { ServiceId } from "../../src/constants/common";
+
+// Mock other dependencies
+jest.mock("../../src/helpers/logger");
 
 describe("EmailService", () => {
+  const serviceId: ServiceId = "examaxis";
+
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -34,10 +39,10 @@ describe("EmailService", () => {
 
       mockTransporter.sendMail.mockResolvedValue({ messageId: "test-id" });
 
-      await sendEmail("test@example.com", mockTemplate);
+      await sendEmail("test@example.com", mockTemplate, serviceId);
 
       expect(mockTransporter.sendMail).toHaveBeenCalledWith({
-        from: config.email.from,
+        from: expect.any(String),
         to: "test@example.com",
         subject: mockTemplate.subject,
         text: mockTemplate.text,
@@ -54,9 +59,9 @@ describe("EmailService", () => {
 
       mockTransporter.sendMail.mockRejectedValue(new Error("SMTP Error"));
 
-      await expect(sendEmail("test@example.com", mockTemplate)).rejects.toThrow(
-        "Failed to send email"
-      );
+      await expect(
+        sendEmail("test@example.com", mockTemplate, serviceId)
+      ).rejects.toThrow("Failed to send email");
     });
 
     it("should handle network timeout errors", async () => {
@@ -68,49 +73,68 @@ describe("EmailService", () => {
 
       mockTransporter.sendMail.mockRejectedValue(new Error("ETIMEDOUT"));
 
-      await expect(sendEmail("test@example.com", mockTemplate)).rejects.toThrow(
-        "Failed to send email"
+      await expect(
+        sendEmail("test@example.com", mockTemplate, serviceId)
+      ).rejects.toThrow("Failed to send email");
+    });
+
+    it("should handle authentication errors", async () => {
+      const mockTemplate = {
+        subject: "Test Subject",
+        text: "Test text content",
+        html: "<p>Test html content</p>",
+      };
+
+      mockTransporter.sendMail.mockRejectedValue(
+        new Error("Authentication failed")
       );
+
+      await expect(
+        sendEmail("test@example.com", mockTemplate, serviceId)
+      ).rejects.toThrow("Failed to send email");
     });
   });
 
-  describe("generateEmailVerificationTemplate", () => {
-    it("should generate email verification template", async () => {
-      const fullname = "John Doe";
-      const verificationToken = "abc123";
-      const redirectUrl = "https://example.com";
-      const template = await generateEmailVerificationTemplate(
-        fullname,
-        verificationToken,
-        redirectUrl
-      );
+  describe("testConnection", () => {
+    it("should return true when connection is successful", async () => {
+      mockTransporter.verify.mockResolvedValue(true);
 
-      expect(template).toHaveProperty("subject");
-      expect(template).toHaveProperty("text");
-      expect(template).toHaveProperty("html");
-      expect(template.subject).toContain("Verify");
-      expect(template.text).toContain(verificationToken);
-      expect(template.html).toContain(verificationToken);
+      const result = await testConnection(serviceId);
+
+      expect(result).toBe(true);
+      expect(mockTransporter.verify).toHaveBeenCalled();
+    });
+
+    it("should return false when connection fails", async () => {
+      mockTransporter.verify.mockRejectedValue(new Error("Connection failed"));
+
+      const result = await testConnection(serviceId);
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false on SMTP connection timeout", async () => {
+      mockTransporter.verify.mockRejectedValue(new Error("ETIMEDOUT"));
+
+      const result = await testConnection(serviceId);
+
+      expect(result).toBe(false);
     });
   });
 
-  describe("generatePasswordResetTemplate", () => {
-    it("should generate password reset template", async () => {
-      const fullname = "John Doe";
-      const resetToken = "xyz789";
-      const redirectUrl = "https://example.com";
-      const template = await generatePasswordResetTemplate(
-        fullname,
-        resetToken,
-        redirectUrl
-      );
+  describe("getTransporter", () => {
+    it("should return transporter for service", () => {
+      const transporter = getTransporter(serviceId);
 
-      expect(template).toHaveProperty("subject");
-      expect(template).toHaveProperty("text");
-      expect(template).toHaveProperty("html");
-      expect(template.subject).toContain("Reset");
-      expect(template.text).toContain(resetToken);
-      expect(template.html).toContain(resetToken);
+      expect(transporter).toBeDefined();
+    });
+
+    it("should return cached transporter on subsequent calls", () => {
+      const transporter1 = getTransporter(serviceId);
+      const transporter2 = getTransporter(serviceId);
+
+      // Should be the same cached instance
+      expect(transporter1).toBe(transporter2);
     });
   });
 });

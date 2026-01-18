@@ -64,9 +64,4 @@ export const config: IConfig = {
       callbackUrl: getRequiredEnvVar("GITHUB_CALLBACK_URL"),
     },
   },
-
-  loki: {
-    enabled: getRequiredEnvVar("LOKI_ENABLED") === "true",
-    host: getRequiredEnvVar("LOKI_HOST"),
-  },
 };

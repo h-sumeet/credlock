@@ -2,30 +2,21 @@ import bcrypt from "bcryptjs";
 import dayjs from "dayjs";
 import { config } from "../config/app";
 import { generateRandomString, hashData } from "../utils/crypto";
-import { addDays, addMinutes, currentDate } from "../utils/dayjs";
-import type { UserDetails } from "../types/user";
+import { addMinutes, currentDate } from "../utils/dayjs";
+import type { User } from "@prisma/client";
 
 /**
  * Serialize a Prisma User object to a clean API response format
  * Removes sensitive fields like password hash and internal tokens
  */
-export const serializeUser = (user: UserDetails) => {
+export const serializeUser = (user: User) => {
   return {
     id: user.id,
-    fullName: user.fullName,
-    ...(user.profileImage && {
-      profileImage: user.profileImage,
-    }),
+    name: user.name,
     email: user.email,
-    emailVerified: user.emailInfo.isVerified,
-    ...(user.emailInfo.provider && {
-      emailProvider: user.emailInfo.provider,
-    }),
-    ...(user.phone && {
-      phone: user.phone,
-      phoneVerified: user.phoneInfo?.isVerified ?? false,
-    }),
-    isActive: user.isActive,
+    ...(user.phone && { phone: user.phone }),
+    ...(user.avatar && { avatar: user.avatar }),
+    ...(user.provider && { provider: user.provider }),
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -48,11 +39,9 @@ export const comparePassword = async (
 };
 
 // Generate a hashed verification token with configurable expiry
-// Use duration in minutes for short-lived tokens (e.g., 10 for phone)
-// Use duration in days for long-lived tokens (e.g., 1 for email)
+// Use duration in minutes for short-lived tokens
 export const generateVerificationToken = (
-  duration: number,
-  unit: "minutes" | "days" = "minutes"
+  duration: number
 ): {
   token: string;
   hashed: string;
@@ -60,15 +49,14 @@ export const generateVerificationToken = (
 } => {
   const token = generateRandomString(32);
   const hashed = hashData(token);
-  const expires = unit === "days" ? addDays(duration) : addMinutes(duration);
+  const expires = addMinutes(duration);
   return { token, hashed, expires };
 };
 
 // Check if the user's account is currently locked
-export const isAccountLocked = (user: UserDetails): boolean => {
+export const isAccountLocked = (lockedUntil: Date | null): boolean => {
   return !!(
-    user.lockoutInfo.isLocked &&
-    user.lockoutInfo.lockedUntil &&
-    dayjs(user.lockoutInfo.lockedUntil).isAfter(currentDate())
+    lockedUntil &&
+    dayjs(lockedUntil).isAfter(currentDate())
   );
 };

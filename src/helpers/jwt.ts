@@ -2,14 +2,11 @@ import jwt from "jsonwebtoken";
 import type { IJWTPayload } from "../types/auth";
 import { config } from "../config/app";
 import { throwError } from "../utils/response";
-import type { UserDetails } from "../types/user";
+import type { User } from "@prisma/client";
 
-export const generateAccessToken = (user: UserDetails): string => {
+export const generateAccessToken = (user: User): string => {
   const payload: IJWTPayload = {
     userId: user.id,
-    email: user.email,
-    serviceId: user.serviceId,
-    // fullname: user.fullName,
   };
 
   return jwt.sign(payload, config.jwt.secret, {

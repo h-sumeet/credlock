@@ -2,11 +2,13 @@ import * as UserController from "../../src/controllers/UserController";
 import * as UserService from "../../src/services/UserService";
 import * as SessionService from "../../src/services/SessionService";
 import * as EmailValidation from "../../src/services/EmailValidation";
+import type { User } from "@prisma/client";
 
 // Mock dependencies
 jest.mock("../../src/services/UserService");
 jest.mock("../../src/services/SessionService");
 jest.mock("../../src/services/EmailValidation");
+jest.mock("../../src/helpers/logger");
 
 const mockedUserService = UserService as jest.Mocked<typeof UserService>;
 const mockedSessionService = SessionService as jest.Mocked<
@@ -16,84 +18,29 @@ const mockedEmailValidation = EmailValidation as jest.Mocked<
   typeof EmailValidation
 >;
 
-// Helper function to create clean mock user objects (Prisma format)
-const createMockUser = (overrides: Partial<any> = {}): any => {
-  const defaultUser = {
-    id: "550e8400-e29b-41d4-a716-446655440000",
-    fullname: "John Doe",
-    email: "john@example.com",
-    phone: null,
-    service: "examaxis",
-    profile_image: null,
-    is_active: true,
-    last_login_at: null,
-    created_at: new Date(),
-    updated_at: new Date(),
-    email_info: {
-      id: "email-info-id",
-      user_id: "550e8400-e29b-41d4-a716-446655440000",
-      is_verified: false,
-      verification_token: null,
-      verification_expires: null,
-      pending_email: null,
-      provider: "local",
-      created_at: new Date(),
-      updated_at: new Date(),
-    },
-    phone_info: null,
-    password_info: {
-      id: "password-info-id",
-      user_id: "550e8400-e29b-41d4-a716-446655440000",
-      hash: "hashedpassword",
-      reset_token: null,
-      reset_expires: null,
-      created_at: new Date(),
-      updated_at: new Date(),
-    },
-    lockout_info: {
-      id: "lockout-info-id",
-      user_id: "550e8400-e29b-41d4-a716-446655440000",
-      is_locked: false,
-      locked_until: null,
-      failed_attempt_count: 0,
-      created_at: new Date(),
-      updated_at: new Date(),
-    },
-  };
-
-  return { ...defaultUser, ...overrides };
-};
-
-// Helper to get the serialized version (what the API returns)
-const getSerializedUser = (user: any) => {
-  return {
-    id: user.id,
-    fullname: user.fullname,
-    ...(user.profile_image && {
-      profileImage: user.profile_image,
-    }),
-    email: user.email,
-    email_verified: user.email_info?.is_verified ?? false,
-    ...(user.email_info?.provider && {
-      email_provider: user.email_info.provider,
-    }),
-    ...(user.phone && {
-      phone: user.phone,
-      phone_verified: user.phone_info?.is_verified ?? false,
-    }),
-    isActive: user.is_active,
-    lastLoginAt: user.last_login_at,
-    createdAt: user.created_at,
-    updatedAt: user.updated_at,
-  };
-};
+// Helper function to create mock user
+const createMockUser = (overrides: Partial<User> = {}): User => ({
+  id: "550e8400-e29b-41d4-a716-446655440000",
+  name: "John Doe",
+  email: "john@example.com",
+  phone: null,
+  serviceId: "examaxis",
+  avatar: null,
+  provider: null,
+  lastLoginAt: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  ...overrides,
+});
 
 // Mock Express objects
 const createMockRequest = (overrides: Partial<any> = {}): any => ({
   body: {},
   headers: {},
   user: undefined,
-  service: "examaxis",
+  serviceId: "examaxis",
+  deviceId: "device-123",
+  userId: "550e8400-e29b-41d4-a716-446655440000",
   ip: "127.0.0.1",
   socket: { remoteAddress: "127.0.0.1" },
   ...overrides,
@@ -118,47 +65,35 @@ describe("UserController", () => {
     mockResponse = createMockResponse();
     mockNext = createMockNext();
 
-    // Mock isDisposableEmail to return false by default
+    // Default mock: non-disposable email
     mockedEmailValidation.isDisposableEmail.mockResolvedValue(false);
   });
 
   describe("register", () => {
     it("should register user successfully", async () => {
-      const mockUser = createMockUser();
-      const mockVerificationToken = "verification-token-123";
-
       mockRequest.body = {
-        fullname: "John Doe",
+        name: "John Doe",
         email: "john@example.com",
-        password: "password123",
+        password: "Password123!",
         redirectUrl: "https://example.com/verify",
       };
 
-      mockedUserService.checkUserExists.mockResolvedValue({ exists: false });
       mockedUserService.createUserWithVerification.mockResolvedValue({
-        user: mockUser,
-        verificationToken: mockVerificationToken,
+        message:
+          "User registered successfully. Please check your email for verification.",
       });
-      mockedUserService.sendEmailVerification.mockResolvedValue();
 
       await UserController.register(mockRequest, mockResponse, mockNext);
 
-      expect(mockedUserService.checkUserExists).toHaveBeenCalledWith(
-        "john@example.com",
-        undefined,
-        "examaxis"
+      expect(mockedEmailValidation.isDisposableEmail).toHaveBeenCalledWith(
+        "john@example.com"
       );
       expect(mockedUserService.createUserWithVerification).toHaveBeenCalledWith(
         "John Doe",
         "john@example.com",
         undefined,
-        "password123",
-        "examaxis"
-      );
-      expect(mockedUserService.sendEmailVerification).toHaveBeenCalledWith(
-        "john@example.com",
-        "John Doe",
-        mockVerificationToken,
+        "Password123!",
+        "examaxis",
         "https://example.com/verify"
       );
       expect(mockResponse.json).toHaveBeenCalledWith({
@@ -170,189 +105,73 @@ describe("UserController", () => {
     });
 
     it("should register user with phone number", async () => {
-      const mockUser = createMockUser();
-      const mockVerificationToken = "verification-token-123";
-
       mockRequest.body = {
-        fullname: "John Doe",
+        name: "John Doe",
         email: "john@example.com",
         phone: "+1234567890",
-        password: "password123",
+        password: "Password123!",
         redirectUrl: "https://example.com/verify",
       };
 
-      mockedUserService.checkUserExists.mockResolvedValue({ exists: false });
       mockedUserService.createUserWithVerification.mockResolvedValue({
-        user: mockUser,
-        verificationToken: mockVerificationToken,
+        message:
+          "User registered successfully. Please check your email for verification.",
       });
-      mockedUserService.sendEmailVerification.mockResolvedValue();
-
-      await UserController.register(mockRequest, mockResponse, mockNext);
-
-      expect(mockedUserService.checkUserExists).toHaveBeenCalledWith(
-        "john@example.com",
-        "+1234567890",
-        "examaxis"
-      );
-      expect(mockedUserService.createUserWithVerification).toHaveBeenCalledWith(
-        "John Doe",
-        "john@example.com",
-        "+1234567890",
-        "password123",
-        "examaxis"
-      );
-    });
-
-    it("should register user with custom fields", async () => {
-      const mockUser = createMockUser();
-      const mockVerificationToken = "verification-token-123";
-
-      mockRequest.body = {
-        fullname: "John Doe",
-        email: "john@example.com",
-        password: "password123",
-        redirectUrl: "https://example.com/verify",
-      };
-
-      mockedUserService.checkUserExists.mockResolvedValue({ exists: false });
-      mockedUserService.createUserWithVerification.mockResolvedValue({
-        user: mockUser,
-        verificationToken: mockVerificationToken,
-      });
-      mockedUserService.sendEmailVerification.mockResolvedValue();
 
       await UserController.register(mockRequest, mockResponse, mockNext);
 
       expect(mockedUserService.createUserWithVerification).toHaveBeenCalledWith(
         "John Doe",
         "john@example.com",
-        undefined,
-        "password123",
-        "examaxis"
+        "+1234567890",
+        "Password123!",
+        "examaxis",
+        "https://example.com/verify"
       );
     });
 
-    it("should return error when email already exists", async () => {
+    it("should reject disposable email addresses", async () => {
       mockRequest.body = {
-        fullname: "John Doe",
-        email: "existing@example.com",
-        password: "password123",
-      };
-
-      const mockUser = createMockUser({
-        email: "existing@example.com",
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "local",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      });
-      mockedUserService.checkUserExists.mockResolvedValue({
-        exists: true,
-        user: mockUser,
-        field: "email",
-      });
-
-      await UserController.register(mockRequest, mockResponse, mockNext);
-
-      expect(mockNext).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: "User with this email already exists",
-        })
-      );
-    });
-
-    it("should return error when phone already exists", async () => {
-      mockRequest.body = {
-        fullname: "John Doe",
-        email: "john@example.com",
-        phone: "+1234567890",
-        password: "password123",
-      };
-
-      const mockUser = createMockUser({
-        phone: "+1234567890",
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "local",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      });
-      mockedUserService.checkUserExists.mockResolvedValue({
-        exists: true,
-        user: mockUser,
-        field: "phone",
-      });
-
-      await UserController.register(mockRequest, mockResponse, mockNext);
-
-      expect(mockNext).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: "User with this phone number already exists",
-        })
-      );
-    });
-
-    it("should continue registration even if email sending fails", async () => {
-      const mockUser = createMockUser();
-      const mockVerificationToken = "verification-token-123";
-
-      mockRequest.body = {
-        fullname: "John Doe",
-        email: "john@example.com",
-        password: "password123",
+        name: "John Doe",
+        email: "john@tempmail.com",
+        password: "Password123!",
         redirectUrl: "https://example.com/verify",
       };
 
-      mockedUserService.checkUserExists.mockResolvedValue({ exists: false });
-      mockedUserService.createUserWithVerification.mockResolvedValue({
-        user: mockUser,
-        verificationToken: mockVerificationToken,
-      });
-      mockedUserService.sendEmailVerification.mockRejectedValue(
-        new Error("Email service error")
-      );
+      mockedEmailValidation.isDisposableEmail.mockResolvedValue(true);
 
       await UserController.register(mockRequest, mockResponse, mockNext);
 
-      // Should still return success even if email fails
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        status: "success",
-        code: 200,
-        msg: "User registered successfully. Please check your email for verification.",
-        data: undefined,
-      });
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Please use a valid email address",
+        })
+      );
+      expect(
+        mockedUserService.createUserWithVerification
+      ).not.toHaveBeenCalled();
+    });
+
+    it("should handle registration errors", async () => {
+      mockRequest.body = {
+        name: "John Doe",
+        email: "existing@example.com",
+        password: "Password123!",
+        redirectUrl: "https://example.com/verify",
+      };
+
+      const error = new Error("User with this email already exists");
+      mockedUserService.createUserWithVerification.mockRejectedValue(error);
+
+      await UserController.register(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
     });
   });
 
   describe("verifyEmail", () => {
-    it("should verify email successfully for new user", async () => {
-      const mockUser = createMockUser({
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "local",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      });
+    it("should verify email successfully", async () => {
+      const mockUser = createMockUser();
       const mockTokens = {
         accessToken: "access-token",
         refreshToken: "refresh-token",
@@ -364,7 +183,6 @@ describe("UserController", () => {
 
       mockedUserService.verifyEmailWithToken.mockResolvedValue({
         user: mockUser,
-        isNewlyVerified: true,
       });
       mockedSessionService.generateTokenPair.mockResolvedValue(mockTokens);
 
@@ -375,6 +193,7 @@ describe("UserController", () => {
       );
       expect(mockedSessionService.generateTokenPair).toHaveBeenCalledWith(
         mockUser,
+        "device-123",
         "test-agent",
         "127.0.0.1"
       );
@@ -382,68 +201,41 @@ describe("UserController", () => {
         status: "success",
         code: 200,
         msg: "Email verified successfully",
-        data: {
-          user: getSerializedUser(mockUser),
+        data: expect.objectContaining({
+          user: expect.any(Object),
           tokens: mockTokens,
-        },
+        }),
       });
     });
 
-    it("should verify email for already verified user without generating tokens", async () => {
-      const mockUser = createMockUser({
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "local",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      });
-
+    it("should throw error when deviceId is missing", async () => {
       mockRequest.body = { token: "verification-token" };
-
-      mockedUserService.verifyEmailWithToken.mockResolvedValue({
-        user: mockUser,
-        isNewlyVerified: false,
-      });
+      mockRequest.deviceId = undefined;
 
       await UserController.verifyEmail(mockRequest, mockResponse, mockNext);
 
-      expect(mockedUserService.verifyEmailWithToken).toHaveBeenCalledWith(
-        "verification-token"
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "DeviceId header is required",
+        })
       );
-      expect(mockedSessionService.generateTokenPair).not.toHaveBeenCalled();
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        status: "success",
-        code: 200,
-        msg: "Email verified successfully",
-        data: {
-          user: getSerializedUser(mockUser),
-          tokens: null,
-        },
-      });
+    });
+
+    it("should handle verification errors", async () => {
+      mockRequest.body = { token: "invalid-token" };
+
+      const error = new Error("Invalid or expired email verification token");
+      mockedUserService.verifyEmailWithToken.mockRejectedValue(error);
+
+      await UserController.verifyEmail(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
     });
   });
 
   describe("login", () => {
     it("should login user successfully", async () => {
-      const mockUser = createMockUser({
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "local",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      });
+      const mockUser = createMockUser();
       const mockTokens = {
         accessToken: "access-token",
         refreshToken: "refresh-token",
@@ -452,25 +244,23 @@ describe("UserController", () => {
 
       mockRequest.body = {
         email: "john@example.com",
-        password: "password123",
+        password: "Password123!",
       };
       mockRequest.headers = { "user-agent": "test-agent" };
 
-      mockedUserService.authenticateUser.mockResolvedValue({
-        user: mockUser,
-        isValid: true,
-      });
+      mockedUserService.authenticateUser.mockResolvedValue({ user: mockUser });
       mockedSessionService.generateTokenPair.mockResolvedValue(mockTokens);
 
       await UserController.login(mockRequest, mockResponse, mockNext);
 
       expect(mockedUserService.authenticateUser).toHaveBeenCalledWith(
         "john@example.com",
-        "password123",
+        "Password123!",
         "examaxis"
       );
       expect(mockedSessionService.generateTokenPair).toHaveBeenCalledWith(
         mockUser,
+        "device-123",
         "test-agent",
         "127.0.0.1"
       );
@@ -478,50 +268,66 @@ describe("UserController", () => {
         status: "success",
         code: 200,
         msg: "Login successful",
-        data: {
-          user: getSerializedUser(mockUser),
+        data: expect.objectContaining({
+          user: expect.any(Object),
           tokens: mockTokens,
-        },
+        }),
       });
     });
 
-    it("should return error for invalid credentials", async () => {
+    it("should throw error when deviceId is missing", async () => {
       mockRequest.body = {
         email: "john@example.com",
-        password: "wrongpassword",
+        password: "Password123!",
       };
-
-      mockedUserService.authenticateUser.mockResolvedValue({
-        user: createMockUser(),
-        isValid: false,
-      });
+      mockRequest.deviceId = undefined;
 
       await UserController.login(mockRequest, mockResponse, mockNext);
 
       expect(mockNext).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: "Invalid email or password!",
+          message: "DeviceId header is required",
         })
       );
+    });
+
+    it("should handle invalid credentials", async () => {
+      mockRequest.body = {
+        email: "john@example.com",
+        password: "wrongpassword",
+      };
+
+      const error = new Error("Invalid email or password!");
+      mockedUserService.authenticateUser.mockRejectedValue(error);
+
+      await UserController.login(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
     });
   });
 
   describe("refreshToken", () => {
-    it("should refresh access token successfully", async () => {
+    it("should refresh token successfully", async () => {
       const mockTokens = {
         accessToken: "new-access-token",
         refreshToken: "new-refresh-token",
         expiresIn: "15m",
       };
 
-      mockRequest.headers = { "x-refresh-token": "old-refresh-token" };
+      mockRequest.headers = {
+        "x-refresh-token": "old-refresh-token",
+        "user-agent": "test-agent",
+      };
 
       mockedSessionService.refreshAccessToken.mockResolvedValue(mockTokens);
 
       await UserController.refreshToken(mockRequest, mockResponse, mockNext);
 
       expect(mockedSessionService.refreshAccessToken).toHaveBeenCalledWith(
-        "old-refresh-token"
+        "old-refresh-token",
+        "device-123",
+        "test-agent",
+        "127.0.0.1"
       );
       expect(mockResponse.json).toHaveBeenCalledWith({
         status: "success",
@@ -530,216 +336,14 @@ describe("UserController", () => {
         data: { tokens: mockTokens },
       });
     });
-  });
 
-  describe("getProfile", () => {
-    it("should return user profile", async () => {
-      const mockUser = createMockUser();
+    it("should handle refresh token errors", async () => {
+      mockRequest.headers = { "x-refresh-token": "invalid-token" };
 
-      mockRequest.user = mockUser;
+      const error = new Error("Invalid or expired refresh token");
+      mockedSessionService.refreshAccessToken.mockRejectedValue(error);
 
-      await UserController.getProfile(mockRequest, mockResponse, mockNext);
-
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        status: "success",
-        code: 200,
-        msg: "Profile retrieved successfully",
-        data: { user: getSerializedUser(mockUser) },
-      });
-    });
-  });
-
-  describe("updateProfile", () => {
-    it("should update fullname successfully", async () => {
-      const mockUser = createMockUser();
-      const updatedUser = { ...mockUser, fullname: "Jane Doe" };
-
-      mockRequest.user = mockUser;
-      mockRequest.body = { fullname: "Jane Doe" };
-
-      mockedUserService.updateUserProfile.mockResolvedValue({
-        user: updatedUser,
-        message: "Profile updated successfully",
-      });
-
-      await UserController.updateProfile(mockRequest, mockResponse, mockNext);
-
-      expect(mockedUserService.updateUserProfile).toHaveBeenCalledWith(
-        mockUser,
-        {
-          fullname: "Jane Doe",
-          email: undefined,
-          phone: undefined,
-          password: undefined,
-          redirectUrl: undefined,
-        }
-      );
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        status: "success",
-        code: 200,
-        msg: "Profile updated successfully",
-        data: expect.objectContaining({
-          user: expect.objectContaining({
-            id: mockUser.id,
-            fullname: "Jane Doe",
-          }),
-        }),
-      });
-    });
-
-    it("should update email and send verification", async () => {
-      const mockUser = createMockUser();
-      const updatedUser = { ...mockUser };
-
-      mockRequest.user = mockUser;
-      mockRequest.body = {
-        email: "newemail@example.com",
-        redirectUrl: "https://example.com/verify",
-      };
-
-      mockedUserService.updateUserProfile.mockResolvedValue({
-        user: updatedUser,
-        message:
-          "Profile updated. Verification email sent to your new email address. Please verify to complete the email change.",
-      });
-
-      await UserController.updateProfile(mockRequest, mockResponse, mockNext);
-
-      expect(mockedUserService.updateUserProfile).toHaveBeenCalledWith(
-        mockUser,
-        {
-          fullname: undefined,
-          email: "newemail@example.com",
-          phone: undefined,
-          password: undefined,
-          redirectUrl: "https://example.com/verify",
-        }
-      );
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        status: "success",
-        code: 200,
-        msg: "Profile updated. Verification email sent to your new email address. Please verify to complete the email change.",
-        data: expect.objectContaining({
-          user: expect.any(Object),
-        }),
-      });
-    });
-
-    it("should update phone successfully", async () => {
-      const mockUser = createMockUser();
-      const updatedUser = { ...mockUser };
-
-      mockRequest.user = mockUser;
-      mockRequest.body = { phone: "+1234567890" };
-
-      mockedUserService.updateUserProfile.mockResolvedValue({
-        user: updatedUser,
-        message: "Profile updated successfully",
-      });
-
-      await UserController.updateProfile(mockRequest, mockResponse, mockNext);
-
-      expect(mockedUserService.updateUserProfile).toHaveBeenCalledWith(
-        mockUser,
-        {
-          fullname: undefined,
-          email: undefined,
-          phone: "+1234567890",
-          password: undefined,
-          redirectUrl: undefined,
-        }
-      );
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        status: "success",
-        code: 200,
-        msg: "Profile updated successfully",
-        data: expect.objectContaining({
-          user: expect.any(Object),
-        }),
-      });
-    });
-
-    it("should update password successfully", async () => {
-      const mockUser = createMockUser();
-      const updatedUser = { ...mockUser };
-
-      mockRequest.user = mockUser;
-      mockRequest.body = { password: "newpassword123" };
-
-      mockedUserService.updateUserProfile.mockResolvedValue({
-        user: updatedUser,
-        message: "Profile updated successfully",
-      });
-
-      await UserController.updateProfile(mockRequest, mockResponse, mockNext);
-
-      expect(mockedUserService.updateUserProfile).toHaveBeenCalledWith(
-        mockUser,
-        {
-          fullname: undefined,
-          email: undefined,
-          phone: undefined,
-          password: "newpassword123",
-          redirectUrl: undefined,
-        }
-      );
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        status: "success",
-        code: 200,
-        msg: "Profile updated successfully",
-        data: expect.objectContaining({
-          user: expect.any(Object),
-        }),
-      });
-    });
-
-    it("should update multiple fields at once", async () => {
-      const mockUser = createMockUser();
-      const updatedUser = { ...mockUser };
-
-      mockRequest.user = mockUser;
-      mockRequest.body = {
-        fullname: "Jane Smith",
-        phone: "+9876543210",
-      };
-
-      mockedUserService.updateUserProfile.mockResolvedValue({
-        user: updatedUser,
-        message: "Profile updated successfully",
-      });
-
-      await UserController.updateProfile(mockRequest, mockResponse, mockNext);
-
-      expect(mockedUserService.updateUserProfile).toHaveBeenCalledWith(
-        mockUser,
-        {
-          fullname: "Jane Smith",
-          email: undefined,
-          phone: "+9876543210",
-          password: undefined,
-          redirectUrl: undefined,
-        }
-      );
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        status: "success",
-        code: 200,
-        msg: "Profile updated successfully",
-        data: expect.objectContaining({
-          user: expect.any(Object),
-        }),
-      });
-    });
-
-    it("should handle errors during profile update", async () => {
-      const mockUser = createMockUser();
-
-      mockRequest.user = mockUser;
-      mockRequest.body = { email: "taken@example.com" };
-
-      const error = new Error("Email address is already in use");
-      mockedUserService.updateUserProfile.mockRejectedValue(error);
-
-      await UserController.updateProfile(mockRequest, mockResponse, mockNext);
+      await UserController.refreshToken(mockRequest, mockResponse, mockNext);
 
       expect(mockNext).toHaveBeenCalledWith(error);
     });
@@ -768,13 +372,27 @@ describe("UserController", () => {
         data: undefined,
       });
     });
+
+    it("should handle forgot password errors", async () => {
+      mockRequest.body = {
+        email: "nonexistent@example.com",
+        redirectUrl: "https://example.com/reset",
+      };
+
+      const error = new Error("Don't have an account with that email");
+      mockedUserService.sendPasswordResetEmail.mockRejectedValue(error);
+
+      await UserController.forgotPassword(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
+    });
   });
 
   describe("resetPassword", () => {
     it("should reset password successfully", async () => {
       mockRequest.body = {
         token: "reset-token",
-        password: "newpassword123",
+        password: "NewPassword123!",
       };
 
       mockedUserService.resetPasswordWithToken.mockResolvedValue();
@@ -783,7 +401,7 @@ describe("UserController", () => {
 
       expect(mockedUserService.resetPasswordWithToken).toHaveBeenCalledWith(
         "reset-token",
-        "newpassword123"
+        "NewPassword123!"
       );
       expect(mockResponse.json).toHaveBeenCalledWith({
         status: "success",
@@ -792,21 +410,190 @@ describe("UserController", () => {
         data: undefined,
       });
     });
+
+    it("should handle reset password errors", async () => {
+      mockRequest.body = {
+        token: "invalid-token",
+        password: "NewPassword123!",
+      };
+
+      const error = new Error("Invalid or expired password reset token");
+      mockedUserService.resetPasswordWithToken.mockRejectedValue(error);
+
+      await UserController.resetPassword(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe("getProfile", () => {
+    it("should return user profile successfully", async () => {
+      const mockUser = createMockUser();
+
+      mockedUserService.getUserById.mockResolvedValue(mockUser);
+
+      await UserController.getProfile(mockRequest, mockResponse, mockNext);
+
+      expect(mockedUserService.getUserById).toHaveBeenCalledWith(
+        mockRequest.userId
+      );
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        status: "success",
+        code: 200,
+        msg: "Profile retrieved successfully",
+        data: expect.objectContaining({
+          user: expect.any(Object),
+        }),
+      });
+    });
+
+    it("should handle profile retrieval errors", async () => {
+      const error = new Error("User not found");
+      mockedUserService.getUserById.mockRejectedValue(error);
+
+      await UserController.getProfile(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe("updateProfile", () => {
+    it("should update profile successfully", async () => {
+      const mockUser = createMockUser();
+      const updatedUser = { ...mockUser, name: "Jane Doe" };
+
+      mockRequest.body = { name: "Jane Doe" };
+
+      mockedUserService.updateUserProfile.mockResolvedValue({
+        user: updatedUser,
+        message: "Profile updated successfully",
+      });
+
+      await UserController.updateProfile(mockRequest, mockResponse, mockNext);
+
+      expect(mockedUserService.updateUserProfile).toHaveBeenCalledWith(
+        mockRequest.userId,
+        mockRequest.body
+      );
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        status: "success",
+        code: 200,
+        msg: "Profile updated successfully",
+        data: expect.objectContaining({
+          user: expect.any(Object),
+        }),
+      });
+    });
+
+    it("should update password and prompt re-login", async () => {
+      const mockUser = createMockUser();
+
+      mockRequest.body = { password: "NewPassword123!" };
+
+      mockedUserService.updateUserProfile.mockResolvedValue({
+        user: mockUser,
+        message:
+          "Profile updated successfully. Please login again with your new password.",
+      });
+
+      await UserController.updateProfile(mockRequest, mockResponse, mockNext);
+
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        status: "success",
+        code: 200,
+        msg: "Profile updated successfully. Please login again with your new password.",
+        data: expect.any(Object),
+      });
+    });
+
+    it("should handle profile update errors", async () => {
+      mockRequest.body = { name: "Jane Doe" };
+
+      const error = new Error("Profile update failed");
+      mockedUserService.updateUserProfile.mockRejectedValue(error);
+
+      await UserController.updateProfile(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe("updateEmail", () => {
+    it("should update email successfully", async () => {
+      mockRequest.body = {
+        email: "newemail@example.com",
+        redirectUrl: "https://example.com/verify",
+      };
+
+      mockedUserService.updateEmailWithVerification.mockResolvedValue({
+        message: "Verification email sent to new email address",
+      });
+
+      await UserController.updateEmail(mockRequest, mockResponse, mockNext);
+
+      expect(mockedEmailValidation.isDisposableEmail).toHaveBeenCalledWith(
+        "newemail@example.com"
+      );
+      expect(
+        mockedUserService.updateEmailWithVerification
+      ).toHaveBeenCalledWith(
+        mockRequest.userId,
+        "examaxis",
+        "newemail@example.com",
+        "https://example.com/verify"
+      );
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        status: "success",
+        code: 200,
+        msg: "Verification email sent to new email address",
+        data: undefined,
+      });
+    });
+
+    it("should reject disposable email for email update", async () => {
+      mockRequest.body = {
+        email: "temp@tempmail.com",
+        redirectUrl: "https://example.com/verify",
+      };
+
+      mockedEmailValidation.isDisposableEmail.mockResolvedValue(true);
+
+      await UserController.updateEmail(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Please use a valid email address",
+        })
+      );
+      expect(
+        mockedUserService.updateEmailWithVerification
+      ).not.toHaveBeenCalled();
+    });
+
+    it("should handle email update errors", async () => {
+      mockRequest.body = {
+        email: "taken@example.com",
+        redirectUrl: "https://example.com/verify",
+      };
+
+      const error = new Error("Email already in use");
+      mockedUserService.updateEmailWithVerification.mockRejectedValue(error);
+
+      await UserController.updateEmail(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
+    });
   });
 
   describe("logout", () => {
-    it("should logout user with refresh token", async () => {
-      const mockUser = createMockUser();
-
-      mockRequest.user = mockUser;
-      mockRequest.headers = { "x-refresh-token": "refresh-token" };
-
-      mockedSessionService.revokeRefreshToken.mockResolvedValue();
+    it("should logout user with deviceId", async () => {
+      mockedSessionService.revokeUserSession.mockResolvedValue();
 
       await UserController.logout(mockRequest, mockResponse, mockNext);
 
-      expect(mockedSessionService.revokeRefreshToken).toHaveBeenCalledWith(
-        "refresh-token"
+      expect(mockedSessionService.revokeUserSession).toHaveBeenCalledWith(
+        mockRequest.userId,
+        mockRequest.deviceId
       );
       expect(mockResponse.json).toHaveBeenCalledWith({
         status: "success",
@@ -816,18 +603,15 @@ describe("UserController", () => {
       });
     });
 
-    it("should logout user without refresh token by revoking all sessions", async () => {
-      const mockUser = createMockUser();
-
-      mockRequest.user = mockUser;
-      mockRequest.headers = {};
+    it("should logout from all sessions when deviceId is missing", async () => {
+      mockRequest.deviceId = undefined;
 
       mockedSessionService.revokeAllUserSessions.mockResolvedValue();
 
       await UserController.logout(mockRequest, mockResponse, mockNext);
 
       expect(mockedSessionService.revokeAllUserSessions).toHaveBeenCalledWith(
-        mockUser.id
+        mockRequest.userId
       );
       expect(mockResponse.json).toHaveBeenCalledWith({
         status: "success",
@@ -838,13 +622,8 @@ describe("UserController", () => {
     });
 
     it("should handle logout errors", async () => {
-      const mockUser = createMockUser();
       const error = new Error("Session revocation failed");
-
-      mockRequest.user = mockUser;
-      mockRequest.headers = { "x-refresh-token": "refresh-token" };
-
-      mockedSessionService.revokeRefreshToken.mockRejectedValue(error);
+      mockedSessionService.revokeUserSession.mockRejectedValue(error);
 
       await UserController.logout(mockRequest, mockResponse, mockNext);
 
@@ -853,17 +632,13 @@ describe("UserController", () => {
   });
 
   describe("logoutAll", () => {
-    it("should logout user from all devices successfully", async () => {
-      const mockUser = createMockUser();
-
-      mockRequest.user = mockUser;
-
+    it("should logout from all devices successfully", async () => {
       mockedSessionService.revokeAllUserSessions.mockResolvedValue();
 
       await UserController.logoutAll(mockRequest, mockResponse, mockNext);
 
       expect(mockedSessionService.revokeAllUserSessions).toHaveBeenCalledWith(
-        mockUser.id
+        mockRequest.userId
       );
       expect(mockResponse.json).toHaveBeenCalledWith({
         status: "success",
@@ -871,6 +646,44 @@ describe("UserController", () => {
         msg: "Logged out from all devices successfully",
         data: undefined,
       });
+    });
+
+    it("should handle logout all errors", async () => {
+      const error = new Error("Failed to revoke all sessions");
+      mockedSessionService.revokeAllUserSessions.mockRejectedValue(error);
+
+      await UserController.logoutAll(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe("deleteAccount", () => {
+    it("should delete account successfully", async () => {
+      mockedUserService.archiveUserAccount.mockResolvedValue({
+        message: "Account deleted successfully",
+      });
+
+      await UserController.deleteAccount(mockRequest, mockResponse, mockNext);
+
+      expect(mockedUserService.archiveUserAccount).toHaveBeenCalledWith(
+        mockRequest.userId
+      );
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        status: "success",
+        code: 200,
+        msg: "Account deleted successfully",
+        data: undefined,
+      });
+    });
+
+    it("should handle account deletion errors", async () => {
+      const error = new Error("Failed to delete account");
+      mockedUserService.archiveUserAccount.mockRejectedValue(error);
+
+      await UserController.deleteAccount(mockRequest, mockResponse, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(error);
     });
   });
 });

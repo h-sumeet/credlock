@@ -1,18 +1,20 @@
 import type { Profile as GitHubProfile } from "passport-github2";
+import type { Profile as GoogleProfile } from "passport-google-oauth20";
 import {
   createOAuthUser,
   handleGithubAuth,
+  handleGoogleAuth,
 } from "../../src/services/OauthService";
-import { GITHUB_EMAIL_API, AUTH_PROVIDERS } from "../../src/constants/common";
+import { AUTH_PROVIDERS, GITHUB_EMAIL_API } from "../../src/constants/common";
 import type { IOAuthUser } from "../../src/types/user";
 import { prisma } from "../../src/config/prisma";
+import type { User } from "@prisma/client";
 
 // Mock dependencies
 jest.mock("../../src/config/prisma", () => ({
   prisma: {
     user: {
       findFirst: jest.fn(),
-      findUnique: jest.fn(),
       create: jest.fn(),
     },
   },
@@ -25,63 +27,37 @@ global.fetch = jest.fn();
 const mockedPrisma = prisma as jest.Mocked<typeof prisma>;
 const mockFetch = global.fetch as jest.MockedFunction<typeof fetch>;
 
-describe("OauthService - Core Tests", () => {
+// Helper to create mock user
+const createMockUser = (overrides: Partial<User> = {}): User => ({
+  id: "550e8400-e29b-41d4-a716-446655440000",
+  name: "Test User",
+  email: "test@example.com",
+  phone: null,
+  serviceId: "examaxis",
+  avatar: null,
+  provider: "google",
+  lastLoginAt: new Date(),
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  ...overrides,
+});
+
+describe("OauthService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   describe("createOAuthUser", () => {
     it("should return existing user if found", async () => {
+      const existingUser = createMockUser();
       const mockOAuthUser: IOAuthUser = {
         email: "test@example.com",
         displayName: "Test User",
         provider: AUTH_PROVIDERS.GOOGLE,
         isVerified: true,
-        service: "examaxis",
+        serviceId: "examaxis",
       };
 
-      const existingUser = {
-        id: "550e8400-e29b-41d4-a716-446655440000",
-        fullname: "Existing User",
-        email: "test@example.com",
-        phone: null,
-        service: "examaxis",
-        profile_image: null,
-        is_active: true,
-        last_login_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "google",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        phone_info: null,
-        password_info: {
-          id: "password-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          hash: null,
-          reset_token: null,
-          reset_expires: null,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        lockout_info: {
-          id: "lockout-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_locked: false,
-          locked_until: null,
-          failed_attempt_count: 0,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      } as any;
       (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(
         existingUser
       );
@@ -91,64 +67,22 @@ describe("OauthService - Core Tests", () => {
       expect(mockedPrisma.user.findFirst).toHaveBeenCalledWith({
         where: {
           email: "test@example.com",
-          service: "examaxis",
+          serviceId: "examaxis",
         },
-        include: expect.any(Object),
       });
       expect(result).toBe(existingUser);
+      expect(mockedPrisma.user.create).not.toHaveBeenCalled();
     });
 
     it("should create new user if not found", async () => {
+      const newUser = createMockUser();
       const mockOAuthUser: IOAuthUser = {
-        email: "test@example.com",
-        displayName: "Test User",
+        email: "new@example.com",
+        displayName: "New User",
         provider: AUTH_PROVIDERS.GOOGLE,
         isVerified: true,
-        service: "examaxis",
+        serviceId: "examaxis",
       };
-
-      const newUser = {
-        id: "550e8400-e29b-41d4-a716-446655440000",
-        fullname: "Test User",
-        email: "test@example.com",
-        phone: null,
-        service: "examaxis",
-        profile_image: null,
-        is_active: true,
-        last_login_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "google",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        phone_info: null,
-        password_info: {
-          id: "password-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          hash: null,
-          reset_token: null,
-          reset_expires: null,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        lockout_info: {
-          id: "lockout-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_locked: false,
-          locked_until: null,
-          failed_attempt_count: 0,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      } as any;
 
       (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
       (mockedPrisma.user.create as jest.Mock).mockResolvedValue(newUser);
@@ -157,203 +91,254 @@ describe("OauthService - Core Tests", () => {
 
       expect(mockedPrisma.user.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          fullname: "Test User",
-          email: "test@example.com",
-          service: "examaxis",
-          email_info: {
-            create: expect.objectContaining({
-              is_verified: true,
-              provider: "google",
-            }),
+          name: "New User",
+          email: "new@example.com",
+          serviceId: "examaxis",
+          provider: "google",
+          emailInfo: {
+            create: { isVerified: true },
           },
-          password_info: {
-            create: expect.objectContaining({
-              hash: null,
-            }),
+          passwordInfo: {
+            create: { hash: null },
           },
-          lockout_info: {
-            create: expect.objectContaining({
-              is_locked: false,
-              failed_attempt_count: 0,
-            }),
-          },
-          is_active: true,
-          last_login_at: expect.any(Date),
         }),
-        include: expect.any(Object),
       });
       expect(result).toBe(newUser);
+    });
+
+    it("should create user with avatar if provided", async () => {
+      const newUser = createMockUser({
+        avatar: "https://example.com/avatar.jpg",
+      });
+      const mockOAuthUser: IOAuthUser = {
+        email: "new@example.com",
+        displayName: "New User",
+        avatarUrl: "https://example.com/avatar.jpg",
+        provider: AUTH_PROVIDERS.GOOGLE,
+        isVerified: true,
+        serviceId: "examaxis",
+      };
+
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+      (mockedPrisma.user.create as jest.Mock).mockResolvedValue(newUser);
+
+      await createOAuthUser(mockOAuthUser);
+
+      expect(mockedPrisma.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          avatar: "https://example.com/avatar.jpg",
+        }),
+      });
+    });
+  });
+
+  describe("handleGoogleAuth", () => {
+    const createMockGoogleProfile = (
+      overrides: Partial<GoogleProfile> = {}
+    ): GoogleProfile =>
+      ({
+        id: "google-123",
+        displayName: "Test User",
+        emails: [{ value: "test@example.com", verified: true }],
+        photos: [{ value: "https://example.com/photo.jpg" }],
+        provider: "google",
+        name: { familyName: "User", givenName: "Test" },
+        ...overrides,
+      }) as GoogleProfile;
+
+    it("should create or find user from Google profile", async () => {
+      const mockUser = createMockUser();
+      const mockProfile = createMockGoogleProfile();
+
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+      (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      const result = await handleGoogleAuth(
+        mockProfile,
+        AUTH_PROVIDERS.GOOGLE,
+        "examaxis"
+      );
+
+      expect(result).toBe(mockUser);
+    });
+
+    it("should throw error when no email found", async () => {
+      const mockProfile = createMockGoogleProfile({ emails: [] });
+
+      await expect(
+        handleGoogleAuth(mockProfile, AUTH_PROVIDERS.GOOGLE, "examaxis")
+      ).rejects.toThrow("No email found in OAuth profile");
+    });
+
+    it("should throw error when no display name found", async () => {
+      const mockProfile = createMockGoogleProfile({
+        displayName: "",
+        name: undefined,
+      });
+
+      await expect(
+        handleGoogleAuth(mockProfile, AUTH_PROVIDERS.GOOGLE, "examaxis")
+      ).rejects.toThrow("No display name found in OAuth profile");
+    });
+
+    it("should use givenName when displayName is empty", async () => {
+      const mockUser = createMockUser();
+      const mockProfile = createMockGoogleProfile({
+        displayName: "",
+        name: { givenName: "John", familyName: "Doe" },
+      });
+
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+      (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      await handleGoogleAuth(mockProfile, AUTH_PROVIDERS.GOOGLE, "examaxis");
+
+      expect(mockedPrisma.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          name: "John",
+        }),
+      });
     });
   });
 
   describe("handleGithubAuth", () => {
-    it("should handle GitHub profile with email", async () => {
-      const mockGitHubProfile = {
-        id: "github123",
-        username: "githubuser",
-        displayName: "GitHub User",
-        emails: [{ value: "github@example.com" }],
-        photos: [{ value: "https://avatars.githubusercontent.com/u/123456" }],
+    const createMockGithubProfile = (
+      overrides: Partial<GitHubProfile> = {}
+    ): GitHubProfile =>
+      ({
+        id: "github-123",
+        displayName: "Test User",
+        username: "testuser",
+        profileUrl: "https://github.com/testuser",
+        emails: [{ value: "test@example.com" }],
+        photos: [{ value: "https://avatars.githubusercontent.com/123" }],
         provider: "github",
-      } as GitHubProfile;
+        ...overrides,
+      }) as GitHubProfile;
 
-      const mockUserDoc = {
-        id: "550e8400-e29b-41d4-a716-446655440000",
-        fullname: "GitHub User",
-        email: "github@example.com",
-        phone: null,
-        service: "examaxis",
-        profile_image: "https://avatars.githubusercontent.com/u/123456",
-        is_active: true,
-        last_login_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "github",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        phone_info: null,
-        password_info: {
-          id: "password-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          hash: null,
-          reset_token: null,
-          reset_expires: null,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        lockout_info: {
-          id: "lockout-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_locked: false,
-          locked_until: null,
-          failed_attempt_count: 0,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      } as any;
+    it("should create or find user from GitHub profile", async () => {
+      const mockUser = createMockUser({ provider: "github" });
+      const mockProfile = createMockGithubProfile();
 
       (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUserDoc);
+      (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUser);
 
       const result = await handleGithubAuth(
-        mockGitHubProfile,
-        "github_access_token",
+        mockProfile,
+        "test-access-token",
         "examaxis"
       );
 
-      expect(mockedPrisma.user.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          fullname: "GitHub User",
-          email: "github@example.com",
-          profile_image: "https://avatars.githubusercontent.com/u/123456",
-          email_info: {
-            create: expect.objectContaining({
-              is_verified: true,
-              provider: "github",
-            }),
-          },
-          password_info: {
-            create: expect.objectContaining({
-              hash: null,
-            }),
-          },
-          lockout_info: {
-            create: expect.objectContaining({
-              is_locked: false,
-              failed_attempt_count: 0,
-            }),
-          },
-          is_active: true,
-          last_login_at: expect.any(Date),
-        }),
-        include: expect.any(Object),
-      });
-      expect(result).toBe(mockUserDoc);
+      expect(result).toBe(mockUser);
     });
 
-    it("should fetch email from GitHub API when not in profile", async () => {
-      const profileNoEmail = {
-        id: "github123",
-        username: "githubuser",
-        displayName: "GitHub User",
-        emails: undefined,
-        photos: [{ value: "https://avatars.githubusercontent.com/u/123456" }],
-        provider: "github",
-      } as GitHubProfile;
+    it("should fetch email from GitHub API if not in profile", async () => {
+      const mockUser = createMockUser({ provider: "github" });
+      const mockProfile = createMockGithubProfile({ emails: undefined });
 
-      const mockEmails = [
-        { email: "primary@example.com", primary: true, verified: true },
-      ];
-
-      mockFetch.mockResolvedValueOnce({
+      mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve(mockEmails),
-      } as any);
-
-      const mockUserDoc = {
-        id: "550e8400-e29b-41d4-a716-446655440000",
-        fullname: "GitHub User",
-        email: "primary@example.com",
-        phone: null,
-        service: "examaxis",
-        profile_image: "https://avatars.githubusercontent.com/u/123456",
-        is_active: true,
-        last_login_at: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-        email_info: {
-          id: "email-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_verified: true,
-          verification_token: null,
-          verification_expires: null,
-          pending_email: null,
-          provider: "github",
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        phone_info: null,
-        password_info: {
-          id: "password-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          hash: null,
-          reset_token: null,
-          reset_expires: null,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-        lockout_info: {
-          id: "lockout-info-id",
-          user_id: "550e8400-e29b-41d4-a716-446655440000",
-          is_locked: false,
-          locked_until: null,
-          failed_attempt_count: 0,
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      } as any;
+        json: () =>
+          Promise.resolve([
+            { email: "primary@example.com", primary: true, verified: true },
+            { email: "secondary@example.com", primary: false, verified: true },
+          ]),
+      } as Response);
 
       (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
-      (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUserDoc);
+      (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUser);
 
       const result = await handleGithubAuth(
-        profileNoEmail,
-        "github_access_token",
+        mockProfile,
+        "test-access-token",
         "examaxis"
       );
 
       expect(mockFetch).toHaveBeenCalledWith(GITHUB_EMAIL_API, {
-        headers: { Authorization: "token github_access_token" },
+        headers: { Authorization: "token test-access-token" },
       });
-      expect(result).toBe(mockUserDoc);
+      expect(result).toBe(mockUser);
+    });
+
+    it("should use first email if no primary email found", async () => {
+      const mockUser = createMockUser({ provider: "github" });
+      const mockProfile = createMockGithubProfile({ emails: undefined });
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve([
+            { email: "first@example.com", primary: false, verified: true },
+            { email: "second@example.com", primary: false, verified: true },
+          ]),
+      } as Response);
+
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+      (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      await handleGithubAuth(mockProfile, "test-access-token", "examaxis");
+
+      expect(mockedPrisma.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          email: "first@example.com",
+        }),
+      });
+    });
+
+    it("should throw error when GitHub API fails", async () => {
+      const mockProfile = createMockGithubProfile({ emails: undefined });
+
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 401,
+      } as Response);
+
+      await expect(
+        handleGithubAuth(mockProfile, "invalid-token", "examaxis")
+      ).rejects.toThrow("Unable to retrieve user email from GitHub");
+    });
+
+    it("should throw error when no email can be retrieved", async () => {
+      const mockProfile = createMockGithubProfile({ emails: undefined });
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve([]),
+      } as Response);
+
+      await expect(
+        handleGithubAuth(mockProfile, "test-access-token", "examaxis")
+      ).rejects.toThrow("No email found for GitHub user");
+    });
+
+    it("should throw error when no display name found", async () => {
+      const mockProfile = createMockGithubProfile({
+        displayName: "",
+        username: undefined,
+      });
+
+      await expect(
+        handleGithubAuth(mockProfile, "test-access-token", "examaxis")
+      ).rejects.toThrow("No display name found in GitHub profile");
+    });
+
+    it("should use username when displayName is empty", async () => {
+      const mockUser = createMockUser({ provider: "github" });
+      const mockProfile = createMockGithubProfile({
+        displayName: "",
+        username: "testuser",
+      });
+
+      (mockedPrisma.user.findFirst as jest.Mock).mockResolvedValue(null);
+      (mockedPrisma.user.create as jest.Mock).mockResolvedValue(mockUser);
+
+      await handleGithubAuth(mockProfile, "test-access-token", "examaxis");
+
+      expect(mockedPrisma.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          name: "testuser",
+        }),
+      });
     });
   });
 });

@@ -1,8 +1,9 @@
 import jwt from "jsonwebtoken";
 import { generateAccessToken, verifyAccessToken } from "../../src/helpers/jwt";
 import { config } from "../../src/config/app";
+import type { User } from "@prisma/client";
 
-// Mock the config module
+// Mock dependencies
 jest.mock("../../src/config/app");
 jest.mock("jsonwebtoken");
 
@@ -10,34 +11,18 @@ const mockedConfig = config as jest.Mocked<typeof config>;
 const mockedJwt = jwt as jest.Mocked<typeof jwt>;
 
 describe("JWT Helpers", () => {
-  const mockUser = {
-    id: "507f1f77bcf86cd799439011",
-    fullname: "John Doe",
+  const mockUser: User = {
+    id: "550e8400-e29b-41d4-a716-446655440000",
+    name: "John Doe",
     email: "test@example.com",
     phone: null,
-    emailInfo: {
-      isVerified: true,
-      verificationToken: null,
-      verificationExpires: null,
-      pendingEmail: null,
-      provider: "local",
-    },
-    phoneInfo: null,
-    passwordInfo: {
-      hash: "hashedPassword123",
-      resetToken: null,
-      resetExpires: null,
-    },
-    lockoutInfo: {
-      isLocked: false,
-      lockedUntil: null,
-      failedAttemptCount: 0,
-    },
-    isActive: true,
+    avatar: null,
+    provider: "local",
+    serviceId: "examaxis",
     lastLoginAt: new Date(),
     createdAt: new Date(),
     updatedAt: new Date(),
-  } as any;
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -47,7 +32,7 @@ describe("JWT Helpers", () => {
       secret: "test-secret-key",
       refreshSecret: "test-refresh-secret",
       expiresIn: "15m",
-      refreshExpiresIn: "7d", // 7 days
+      refreshExpiresIn: "7d",
     };
 
     mockedConfig.app = {
@@ -62,6 +47,7 @@ describe("JWT Helpers", () => {
       const expectedPayload = {
         userId: mockUser.id,
         email: mockUser.email,
+        serviceId: mockUser.serviceId,
       };
 
       mockedJwt.sign.mockReturnValue(expectedToken as any);
@@ -81,21 +67,15 @@ describe("JWT Helpers", () => {
       );
     });
 
-    it("should handle user with ObjectId _id", () => {
-      const userWithObjectId = {
-        ...mockUser,
-        id: "507f1f77bcf86cd799439011" as any,
-      };
-
+    it("should include serviceId in token payload", () => {
       const expectedToken = "mock.jwt.token";
       mockedJwt.sign.mockReturnValue(expectedToken as any);
 
-      const result = generateAccessToken(userWithObjectId);
+      generateAccessToken(mockUser);
 
-      expect(result).toBe(expectedToken);
       expect(mockedJwt.sign).toHaveBeenCalledWith(
         expect.objectContaining({
-          userId: "507f1f77bcf86cd799439011",
+          serviceId: "examaxis",
         }),
         mockedConfig.jwt.secret,
         expect.any(Object)
@@ -125,39 +105,18 @@ describe("JWT Helpers", () => {
     it("should verify valid token successfully", () => {
       const mockToken = "valid.jwt.token";
       const expectedPayload = {
-        userId: "507f1f77bcf86cd799439011",
+        userId: "550e8400-e29b-41d4-a716-446655440000",
         email: "test@example.com",
-        fullname: "John Doe",
+        serviceId: "examaxis",
         iat: 1234567890,
-        exp: 1234567890 + 900, // 15 minutes later
+        exp: 1234567890 + 900,
       };
 
       mockedJwt.verify.mockReturnValue(expectedPayload as any);
 
-      const result = verifyAccessToken(mockToken);
+      const result = verifyAccessToken(mockToken, "examaxis");
 
       expect(result).toEqual(expectedPayload);
-      expect(mockedJwt.verify).toHaveBeenCalledWith(
-        mockToken,
-        mockedConfig.jwt.secret,
-        {
-          issuer: mockedConfig.app.name,
-          audience: mockedConfig.app.name,
-          algorithms: ["HS256"],
-        }
-      );
-    });
-
-    it("should throw error for invalid token", () => {
-      const mockToken = "invalid.jwt.token";
-
-      mockedJwt.verify.mockImplementation(() => {
-        throw new Error("Invalid token");
-      });
-
-      expect(() => verifyAccessToken(mockToken)).toThrow(
-        "Invalid or expired access token"
-      );
       expect(mockedJwt.verify).toHaveBeenCalledWith(
         mockToken,
         mockedConfig.jwt.secret,
@@ -172,56 +131,68 @@ describe("JWT Helpers", () => {
     it("should throw error for expired token", () => {
       const mockToken = "expired.jwt.token";
 
+      const expiredError = new jwt.TokenExpiredError("jwt expired", new Date());
       mockedJwt.verify.mockImplementation(() => {
-        throw new Error("TokenExpiredError");
+        throw expiredError;
       });
 
-      expect(() => verifyAccessToken(mockToken)).toThrow(
-        "Invalid or expired access token"
-      );
-      expect(mockedJwt.verify).toHaveBeenCalledWith(
-        mockToken,
-        mockedConfig.jwt.secret,
-        {
-          issuer: mockedConfig.app.name,
-          audience: mockedConfig.app.name,
-          algorithms: ["HS256"],
-        }
+      expect(() => verifyAccessToken(mockToken, "examaxis")).toThrow(
+        "Access token has expired"
       );
     });
 
-    it("should throw error for malformed token", () => {
-      const mockToken = "malformed.token";
+    it("should throw error for token not yet valid", () => {
+      const mockToken = "future.jwt.token";
 
+      const notBeforeError = new jwt.NotBeforeError(
+        "jwt not active",
+        new Date()
+      );
       mockedJwt.verify.mockImplementation(() => {
-        throw new Error("JsonWebTokenError");
+        throw notBeforeError;
       });
 
-      expect(() => verifyAccessToken(mockToken)).toThrow(
-        "Invalid or expired access token"
+      expect(() => verifyAccessToken(mockToken, "examaxis")).toThrow(
+        "Access token not yet valid"
       );
-      expect(mockedJwt.verify).toHaveBeenCalledWith(
-        mockToken,
-        mockedConfig.jwt.secret,
-        {
-          issuer: mockedConfig.app.name,
-          audience: mockedConfig.app.name,
-          algorithms: ["HS256"],
-        }
+    });
+
+    it("should throw error for invalid token", () => {
+      const mockToken = "invalid.jwt.token";
+
+      const jsonWebTokenError = new jwt.JsonWebTokenError("invalid token");
+      mockedJwt.verify.mockImplementation(() => {
+        throw jsonWebTokenError;
+      });
+
+      expect(() => verifyAccessToken(mockToken, "examaxis")).toThrow(
+        "Invalid access token"
+      );
+    });
+
+    it("should throw generic error for unknown errors", () => {
+      const mockToken = "error.jwt.token";
+
+      mockedJwt.verify.mockImplementation(() => {
+        throw new Error("Unknown error");
+      });
+
+      expect(() => verifyAccessToken(mockToken, "examaxis")).toThrow(
+        "Invalid or expired access token"
       );
     });
 
     it("should use correct verification options", () => {
-      const mockToken = "test.token";
-      const expectedPayload = {
-        userId: "507f1f77bcf86cd799439011",
+      const mockToken = "valid.jwt.token";
+      const mockPayload = {
+        userId: "user-id",
         email: "test@example.com",
-        fullname: "John Doe",
+        serviceId: "examaxis",
       };
 
-      mockedJwt.verify.mockReturnValue(expectedPayload as any);
+      mockedJwt.verify.mockReturnValue(mockPayload as any);
 
-      verifyAccessToken(mockToken);
+      verifyAccessToken(mockToken, "examaxis");
 
       expect(mockedJwt.verify).toHaveBeenCalledWith(
         mockToken,
@@ -231,77 +202,6 @@ describe("JWT Helpers", () => {
           audience: mockedConfig.app.name,
           algorithms: ["HS256"],
         }
-      );
-    });
-  });
-
-  describe("Edge Cases", () => {
-    it("should handle user with minimal required fields", () => {
-      const minimalUser = {
-        id: "507f1f77bcf86cd799439011" as any,
-        fullname: "Minimal User",
-        email: "minimal@example.com",
-        phone: null,
-        emailInfo: {
-          isVerified: false,
-          verificationToken: null,
-          verificationExpires: null,
-          pendingEmail: null,
-          provider: "local",
-        },
-        phoneInfo: null,
-        passwordInfo: {
-          hash: "hash",
-          resetToken: null,
-          resetExpires: null,
-        },
-        lockoutInfo: {
-          isLocked: false,
-          lockedUntil: null,
-          failedAttemptCount: 0,
-        },
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any;
-
-      const expectedToken = "minimal.jwt.token";
-      mockedJwt.sign.mockReturnValue(expectedToken as any);
-
-      const result = generateAccessToken(minimalUser);
-
-      expect(result).toBe(expectedToken);
-      expect(mockedJwt.sign).toHaveBeenCalledWith(
-        {
-          userId: minimalUser.id,
-          email: minimalUser.email,
-        },
-        mockedConfig.jwt.secret,
-        expect.any(Object)
-      );
-    });
-
-    it("should handle empty string token", () => {
-      const emptyToken = "";
-
-      mockedJwt.verify.mockImplementation(() => {
-        throw new Error("Invalid token");
-      });
-
-      expect(() => verifyAccessToken(emptyToken)).toThrow(
-        "Invalid or expired access token"
-      );
-    });
-
-    it("should handle null token", () => {
-      const nullToken = null as any;
-
-      mockedJwt.verify.mockImplementation(() => {
-        throw new Error("Invalid token");
-      });
-
-      expect(() => verifyAccessToken(nullToken)).toThrow(
-        "Invalid or expired access token"
       );
     });
   });

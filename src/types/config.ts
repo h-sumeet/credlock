@@ -47,8 +47,4 @@ export interface IConfig {
       callbackUrl: string;
     };
   };
-  loki: {
-    enabled: boolean;
-    host: string;
-  };
 }

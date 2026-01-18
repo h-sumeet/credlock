@@ -2,8 +2,7 @@ import {
   registerSchema,
   loginSchema,
   updateProfileSchema,
-  verifyEmailSchema,
-  forgotPasswordSchema,
+  emailVerifyToken,
   resetPasswordSchema,
   refreshTokenSchema,
   tokenHeaderSchema,
@@ -14,7 +13,7 @@ describe("Validation Schemas", () => {
   describe("Registration Schema", () => {
     it("should validate registration without phone number", () => {
       const validData = {
-        fullname: "John Doe",
+        name: "John Doe",
         email: "john@example.com",
         password: "StrongPass123!",
         redirectUrl: "https://example.com",
@@ -26,7 +25,7 @@ describe("Validation Schemas", () => {
 
     it("should validate registration with phone number", () => {
       const validData = {
-        fullname: "John Doe",
+        name: "John Doe",
         email: "john@example.com",
         phone: "+1234567890",
         password: "StrongPass123!",
@@ -39,7 +38,7 @@ describe("Validation Schemas", () => {
 
     it("should reject registration with invalid phone format", () => {
       const invalidData = {
-        fullname: "John Doe",
+        name: "John Doe",
         email: "john@example.com",
         phone: "1234567890", // Missing + prefix
         password: "StrongPass123!",
@@ -57,7 +56,7 @@ describe("Validation Schemas", () => {
   describe("Profile Update Schema", () => {
     it("should validate optional phone in profile update", () => {
       const validDataWithoutPhone = {
-        fullname: "Updated Name",
+        name: "Updated Name",
       };
 
       const { error: errorWithoutPhone } = updateProfileSchema.validate(
@@ -66,7 +65,7 @@ describe("Validation Schemas", () => {
       expect(errorWithoutPhone).toBeUndefined();
 
       const validDataWithPhone = {
-        fullname: "Updated Name",
+        name: "Updated Name",
         phone: "+1234567890",
       };
 
@@ -90,7 +89,7 @@ describe("Validation Schemas", () => {
 
       validPhones.forEach((phone) => {
         const data = {
-          fullname: "Test User",
+          name: "Test User",
           email: "test@example.com",
           phone,
           password: "StrongPass123!",
@@ -116,7 +115,7 @@ describe("Validation Schemas", () => {
 
       invalidPhones.forEach((phone) => {
         const data = {
-          fullname: "Test User",
+          name: "Test User",
           email: "test@example.com",
           phone,
           password: "StrongPass123!",
@@ -140,7 +139,7 @@ describe("Validation Schemas", () => {
 
       validPasswords.forEach((password) => {
         const data = {
-          fullname: "Test User",
+          name: "Test User",
           email: "test@example.com",
           password,
           redirectUrl: "https://example.com",
@@ -165,7 +164,7 @@ describe("Validation Schemas", () => {
 
       invalidPasswords.forEach((password) => {
         const data = {
-          fullname: "Test User",
+          name: "Test User",
           email: "test@example.com",
           password,
           redirectUrl: "https://example.com",
@@ -189,7 +188,7 @@ describe("Validation Schemas", () => {
 
       validEmails.forEach((email) => {
         const data = {
-          fullname: "Test User",
+          name: "Test User",
           email,
           password: "StrongPass123!",
           redirectUrl: "https://example.com",
@@ -212,7 +211,7 @@ describe("Validation Schemas", () => {
 
       invalidEmails.forEach((email) => {
         const data = {
-          fullname: "Test User",
+          name: "Test User",
           email,
           password: "StrongPass123!",
           redirectUrl: "https://example.com",
@@ -269,12 +268,12 @@ describe("Validation Schemas", () => {
   describe("Verify Email Schema", () => {
     it("should validate correct token", () => {
       const validData = { token: "sometoken123" };
-      const { error } = verifyEmailSchema.validate(validData);
+      const { error } = emailVerifyToken.validate(validData);
       expect(error).toBeUndefined();
     });
     it("should reject missing token", () => {
       const invalidData = {};
-      const { error } = verifyEmailSchema.validate(invalidData);
+      const { error } = emailVerifyToken.validate(invalidData);
       expect(error).toBeTruthy();
       if (error && error.details && error.details[0]) {
         expect(error.details[0].message).toContain(
@@ -284,39 +283,12 @@ describe("Validation Schemas", () => {
     });
     it("should reject empty token", () => {
       const invalidData = { token: "" };
-      const { error } = verifyEmailSchema.validate(invalidData);
+      const { error } = emailVerifyToken.validate(invalidData);
       expect(error).toBeTruthy();
       if (error && error.details && error.details[0]) {
         expect(error.details[0].message).toContain(
           "Verification token is required"
         );
-      }
-    });
-  });
-
-  describe("Forgot Password Schema", () => {
-    it("should validate correct email", () => {
-      const validData = {
-        email: "user@example.com",
-        redirectUrl: "https://example.com",
-      };
-      const { error } = forgotPasswordSchema.validate(validData);
-      expect(error).toBeUndefined();
-    });
-    it("should reject missing email", () => {
-      const invalidData = {};
-      const { error } = forgotPasswordSchema.validate(invalidData);
-      expect(error).toBeTruthy();
-      if (error && error.details && error.details[0]) {
-        expect(error.details[0].message).toContain("Email is required");
-      }
-    });
-    it("should reject invalid email format", () => {
-      const invalidData = { email: "invalid-email" };
-      const { error } = forgotPasswordSchema.validate(invalidData);
-      expect(error).toBeTruthy();
-      if (error && error.details && error.details[0]) {
-        expect(error.details[0].message).toContain("valid email address");
       }
     });
   });
@@ -386,20 +358,17 @@ describe("Validation Schemas", () => {
   });
 
   describe("Token Header Schema", () => {
-    it("should validate correct authorization and refresh token headers", () => {
+    it("should validate correct authorization header", () => {
       const validData = {
         authorization:
           "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-        "x-refresh-token": "sometoken1234567890123456789012345678901234567890",
       };
       const { error } = tokenHeaderSchema.validate(validData);
       expect(error).toBeUndefined();
     });
 
     it("should reject missing authorization header", () => {
-      const invalidData = {
-        "x-refresh-token": "sometoken1234567890123456789012345678901234567890",
-      };
+      const invalidData = {};
       const { error } = tokenHeaderSchema.validate(invalidData);
       expect(error).toBeTruthy();
       if (error && error.details && error.details[0]) {
@@ -409,22 +378,18 @@ describe("Validation Schemas", () => {
       }
     });
 
-    it("should reject missing refresh token header", () => {
-      const invalidData = {
+    it("should allow valid authorization without refresh token", () => {
+      const validData = {
         authorization:
           "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
       };
-      const { error } = tokenHeaderSchema.validate(invalidData);
-      expect(error).toBeTruthy();
-      if (error && error.details && error.details[0]) {
-        expect(error.details[0].message).toContain("Refresh token is required");
-      }
+      const { error } = tokenHeaderSchema.validate(validData);
+      expect(error).toBeUndefined();
     });
 
     it("should reject invalid authorization format", () => {
       const invalidData = {
         authorization: "InvalidFormat token",
-        "x-refresh-token": "sometoken1234567890123456789012345678901234567890",
       };
       const { error } = tokenHeaderSchema.validate(invalidData);
       expect(error).toBeTruthy();
@@ -439,7 +404,6 @@ describe("Validation Schemas", () => {
       const invalidData = {
         authorization:
           "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-        "x-refresh-token": "sometoken1234567890123456789012345678901234567890",
       };
       const { error } = tokenHeaderSchema.validate(invalidData);
       expect(error).toBeTruthy();
@@ -453,7 +417,6 @@ describe("Validation Schemas", () => {
     it("should reject authorization with only Bearer prefix", () => {
       const invalidData = {
         authorization: "Bearer",
-        "x-refresh-token": "sometoken1234567890123456789012345678901234567890",
       };
       const { error } = tokenHeaderSchema.validate(invalidData);
       expect(error).toBeTruthy();
@@ -467,7 +430,6 @@ describe("Validation Schemas", () => {
     it("should reject invalid JWT format", () => {
       const invalidData = {
         authorization: "Bearer invalid-jwt-token",
-        "x-refresh-token": "sometoken1234567890123456789012345678901234567890",
       };
       const { error } = tokenHeaderSchema.validate(invalidData);
       expect(error).toBeTruthy();
@@ -482,7 +444,6 @@ describe("Validation Schemas", () => {
       const validData = {
         authorization:
           "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-        "x-refresh-token": "sometoken1234567890123456789012345678901234567890",
         "content-type": "application/json",
         "user-agent": "Mozilla/5.0",
       };
@@ -495,8 +456,6 @@ describe("Validation Schemas", () => {
         headers: {
           authorization:
             "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-          "x-refresh-token":
-            "sometoken1234567890123456789012345678901234567890",
           "extra-header": "should be preserved",
         },
       } as any;
@@ -534,8 +493,6 @@ describe("Validation Schemas", () => {
         headers: {
           authorization:
             "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-          "x-refresh-token":
-            "sometoken1234567890123456789012345678901234567890",
         },
       } as any;
       const mockRes = {} as any;
@@ -548,7 +505,6 @@ describe("Validation Schemas", () => {
       expect(mockReq.headers).toEqual({
         authorization:
           "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-        "x-refresh-token": "sometoken1234567890123456789012345678901234567890",
       });
     });
 
@@ -574,8 +530,6 @@ describe("Validation Schemas", () => {
       const mockReq = {
         headers: {
           authorization: "InvalidFormat",
-          "x-refresh-token":
-            "sometoken1234567890123456789012345678901234567890",
         },
       } as any;
       const mockRes = {} as any;
@@ -619,8 +573,6 @@ describe("Validation Schemas", () => {
         headers: {
           authorization:
             "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-          "x-refresh-token":
-            "sometoken1234567890123456789012345678901234567890",
           "extra-header": "should be preserved",
         },
       } as any;
